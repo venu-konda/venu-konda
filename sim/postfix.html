@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Infix to Postfix Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.stackv{display:flex;flex-direction:column-reverse;gap:4px;min-height:140px;justify-content:flex-start;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px}
+.stackv span{display:block;text-align:center;padding:6px;border-radius:6px;background:#1e3a8a;color:#bfdbfe;font:700 15px ui-monospace,monospace}
+.stackv span:last-child{background:#0ea5e9;color:#082f49}
+.toks{display:flex;flex-wrap:wrap;gap:4px}.toks span{padding:4px 8px;border-radius:6px;background:#1f2937;border:1px solid var(--line);font:14px ui-monospace,monospace}.toks span.cur{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}.toks span.done{opacity:.45}
+tr.cur td{background:#082f49}
+.big{font:700 20px ui-monospace,monospace;word-break:break-word}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>Infix → Postfix Converter &amp; Evaluator</h1><span class="tag">C · stack · shunting-yard</span></div></div>
+<main class="wrap">
+<p class="intro">The stack-based expression parser I wrote in C, step by step: the infix expression is scanned token by token, operators wait on a stack according to precedence and associativity (shunting-yard), operands go straight to the output, and the resulting postfix string is evaluated with a second stack.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Expression</h2>
+   <input type="text" id="expr" value="3 + 4 * (2 - 1) ^ 2 / 5">
+   <div class="btns"><button id="go">Convert</button><button class="sec" id="next">Next step</button><button class="sec" id="play">Play</button></div>
+   <h3>Examples</h3>
+   <div class="btns" id="ex"></div>
+   <div class="note">Supported: integers and decimals, <code>+ − * / % ^</code>, parentheses and unary minus. <code>^</code> is right-associative, the rest are left-associative. Precedence: <code>^</code> &gt; <code>* / %</code> &gt; <code>+ −</code>.</div>
+  </div>
+  <div class="panel">
+   <h2>Operator stack</h2>
+   <div class="stackv" id="stk"></div>
+   <h3>Output so far</h3>
+   <div class="big" id="outv">—</div>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Tokens</h2><div class="toks" id="toks"></div>
+   <div class="stats"><div class="stat"><div class="k">Postfix</div><div class="n sm mono" id="pf">—</div></div><div class="stat"><div class="k">Value</div><div class="n" id="val">—</div></div></div>
+  </div>
+  <div class="panel"><h2>Conversion steps</h2><div class="tscroll" style="max-height:320px;overflow:auto"><table><thead><tr><th>#</th><th>Token</th><th>Action</th><th>Stack (bottom → top)</th><th>Output</th></tr></thead><tbody id="steps"></tbody></table></div></div>
+  <div class="panel"><h2>Postfix evaluation</h2><div class="tscroll" style="max-height:260px;overflow:auto"><table><thead><tr><th>Token</th><th>Action</th><th>Operand stack</th></tr></thead><tbody id="eval"></tbody></table></div></div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const PREC={'+':1,'-':1,'*':2,'/':2,'%':2,'^':3},RIGHT={'^':true};
+function tokenize(s){
+ const t=[];let i=0,prev=null;
+ while(i<s.length){const c=s[i];
+  if(/\s/.test(c)){i++;continue}
+  if(/[0-9.]/.test(c)){let j=i;while(j<s.length&&/[0-9.]/.test(s[j]))j++;const v=s.slice(i,j);if(isNaN(+v))throw Error('bad number '+v);t.push({t:'num',v});prev='num';i=j;continue}
+  if(c==='('||c===')'){t.push({t:c,v:c});prev=c;i++;continue}
+  if(c in PREC){if(c==='-'&&(prev===null||prev==='op'||prev==='(')){/* unary minus: fold into the next number */let j=i+1;while(j<s.length&&/\s/.test(s[j]))j++;let k=j;while(k<s.length&&/[0-9.]/.test(s[k]))k++;if(k===j)throw Error('unary minus needs a number');t.push({t:'num',v:'-'+s.slice(j,k)});prev='num';i=k;continue}
+   t.push({t:'op',v:c});prev='op';i++;continue}
+  throw Error(`unexpected character '${c}' at ${i}`);
+ }
+ return t;
+}
+function convert(tokens){
+ const st=[],out=[],steps=[];let n=0;
+ const rec=(tok,act)=>steps.push({n:++n,tok,act,st:[...st],out:[...out]});
+ for(const k of tokens){
+  if(k.t==='num'){out.push(k.v);rec(k.v,'operand → output')}
+  else if(k.t==='('){st.push('(');rec('(','push (')}
+  else if(k.t===')'){let acts=[];while(st.length&&st[st.length-1]!=='('){acts.push(st.pop());out.push(acts[acts.length-1])}if(!st.length)throw Error('mismatched parentheses');st.pop();rec(')',`pop ${acts.length?acts.join(' ')+' to output, ':''}discard (`)}
+  else{const acts=[];while(st.length&&st[st.length-1]!=='('&&(PREC[st[st.length-1]]>PREC[k.v]||(PREC[st[st.length-1]]===PREC[k.v]&&!RIGHT[k.v]))){const o=st.pop();acts.push(o);out.push(o)}st.push(k.v);rec(k.v,(acts.length?`pop ${acts.join(' ')} (higher/equal precedence), `:'')+`push ${k.v}`)}
+ }
+ while(st.length){const o=st.pop();if(o==='(')throw Error('mismatched parentheses');out.push(o);rec('(end)',`pop ${o} to output`)}
+ return{steps,out};
+}
+function evaluate(pf){
+ const st=[],rows=[];
+ for(const k of pf){
+  if(k in PREC){if(st.length<2)throw Error('not enough operands');const b=st.pop(),a=st.pop();const r={'+':a+b,'-':a-b,'*':a*b,'/':a/b,'%':a%b,'^':Math.pow(a,b)}[k];st.push(r);rows.push([k,`pop ${a}, ${b} → ${a} ${k} ${b} = ${+r.toFixed(6)}`,[...st]])}
+  else{st.push(+k);rows.push([k,'push operand',[...st]])}
+ }
+ if(st.length!==1)throw Error('malformed expression');return{v:st[0],rows};
+}
+let S=null,idx=0,timer=null;
+function render(){
+ if(!S)return;const cur=S.steps[Math.min(idx,S.steps.length-1)],done=idx>=S.steps.length;
+ $('stk').innerHTML=(done?[]:cur.st).map(x=>`<span>${x}</span>`).join('')||'<span class="muted small" style="background:none;color:#64748b">empty</span>';
+ $('outv').textContent=(done?S.out:cur.out).join(' ')||'—';
+ $('toks').innerHTML=S.tokens.map((k,i)=>`<span class="${i<idx?'done':i===idx?'cur':''}">${k.v}</span>`).join('');
+ $('steps').innerHTML=S.steps.slice(0,idx+1).map((s,i)=>`<tr class="${i===idx?'cur':''}"><td>${s.n}</td><td class="mono">${s.tok}</td><td>${s.act}</td><td class="mono">${s.st.join(' ')||'—'}</td><td class="mono">${s.out.join(' ')}</td></tr>`).join('');
+ if(done){$('pf').textContent=S.out.join(' ');$('val').textContent=S.err?S.err:(+S.value.toFixed(6));$('eval').innerHTML=S.evalRows.map(r=>`<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td class="mono">${r[2].map(x=>+x.toFixed(4)).join(' ')}</td></tr>`).join('')}
+ else{$('pf').textContent='…';$('val').textContent='…';$('eval').innerHTML=''}
+ const tb=$('steps').parentElement.parentElement;tb.scrollTop=tb.scrollHeight;
+}
+function start(all){
+ clearInterval(timer);timer=null;$('play').textContent='Play';
+ try{const tokens=tokenize($('expr').value);const {steps,out}=convert(tokens);S={tokens,steps,out};try{const e=evaluate(out);S.value=e.v;S.evalRows=e.rows}catch(err){S.err=err.message;S.evalRows=[]}idx=all?steps.length:0;render()}
+ catch(err){S=null;$('steps').innerHTML=`<tr><td colspan="5" class="err" style="color:#fca5a5">${err.message}</td></tr>`;$('pf').textContent='error';$('val').textContent='—';$('toks').innerHTML='';$('stk').innerHTML='';$('outv').textContent='—';$('eval').innerHTML=''}
+}
+$('go').addEventListener('click',()=>start(true));
+$('next').addEventListener('click',()=>{if(!S||idx>=S.steps.length)start(false);else{idx++;render()}});
+$('play').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;$('play').textContent='Play';return}if(!S||idx>=S.steps.length)start(false);$('play').textContent='Stop';timer=setInterval(()=>{if(idx>=S.steps.length){clearInterval(timer);timer=null;$('play').textContent='Play';return}idx++;render()},700)});
+$('expr').addEventListener('keydown',e=>{if(e.key==='Enter')start(true)});
+const EX=['3 + 4 * (2 - 1) ^ 2 / 5','(1 + 2) * (3 + 4)','2 ^ 3 ^ 2','-5 + 10 % 3 * 2','a + b'];
+$('ex').innerHTML=EX.map(e=>`<button class="sec" data-e="${e}">${e}</button>`).join('');
+$('ex').querySelectorAll('[data-e]').forEach(b=>b.addEventListener('click',()=>{$('expr').value=b.dataset.e;start(true)}));
+start(true);
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Venu Konda · Embedded Software Engineer</title>
+<meta name="description" content="Venu Konda — Embedded Software Engineer in Hyderabad building avionics flight software on STM32 and FreeRTOS. Projects with live browser simulators, resume and contact details.">
+<meta property="og:title" content="Venu Konda · Embedded Software Engineer">
+<meta property="og:description" content="STM32 · ESP32 · FreeRTOS · drivers · bootloaders · flash file systems. Projects with interactive simulators.">
+<meta property="og:type" content="profile">
+<meta property="og:image" content="assets/img/photo.jpg">
+<link rel="icon" href="assets/img/favicon.png">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<header class="nav">
+ <div class="wrap">
+  <a class="brand" href="#top"><img src="assets/img/photo-256.jpg" alt="" width="32" height="32">Venu Konda</a>
+  <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="siteNav">Menu ☰</button>
+  <nav id="siteNav">
+   <a href="#about">About</a><a href="#skills">Skills</a><a href="#experience">Experience</a><a href="#projects">Projects</a><a href="#simulators">Simulators</a><a href="#education">Education</a><a href="#contact">Contact</a>
+   <a class="cta" href="assets/resume/Venu_Konda_Resume.pdf" target="_blank" rel="noopener">Resume ↓</a>
+  </nav>
+ </div>
+</header>
+
+<main id="top">
+<div class="wrap">
+ <div class="hero">
+  <img class="photo" src="assets/img/photo.jpg" alt="Venu Konda" width="220" height="220" data-fallback>
+  <div>
+   <h1>Venu Konda</h1>
+   <p class="role">Embedded Software Engineer · Avionics flight software</p>
+   <p class="lead">I write real-time firmware for STM32, ESP32 and ARM7 systems: FreeRTOS applications, peripheral drivers, bootloaders and flash file systems, with the host tooling and documentation to go with them. Currently building avionics flight software at XDLINX Space Labs.</p>
+   <div class="loc">📍 Hyderabad, India &nbsp;·&nbsp; 2+ years of experience &nbsp;·&nbsp; open to embedded / firmware roles</div>
+   <div class="btns">
+    <a class="btn" href="assets/resume/Venu_Konda_Resume.pdf" target="_blank" rel="noopener">Download resume (PDF)</a>
+    <a class="btn sec" href="#contact">Contact me</a>
+    <a class="btn sec" href="https://github.com/venu-konda" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn sec" href="https://www.linkedin.com/in/venu-konda-dev" target="_blank" rel="noopener">LinkedIn</a>
+   </div>
+  </div>
+ </div>
+</div>
+
+<section id="about"><div class="wrap reveal">
+ <h2>About</h2>
+ <p class="sub">Who I am and what I do</p>
+ <div class="grid two">
+  <div class="card">
+   <p style="margin:0 0 12px">Embedded Software Engineer with 2+ years of experience developing real-time firmware for STM32, ESP32 and ARM7 systems. Strong in Embedded C/C++, FreeRTOS, peripheral drivers (UART, SPI, I2C, CAN), bootloaders and flash file systems, with hands-on board bring-up and debugging experience.</p>
+   <p style="margin:0">I ship code with the supporting tooling around it: Linux host utilities, build scripts and documented, version-controlled repositories. Every project on this page has a browser simulator so you can see how the firmware behaves without the hardware.</p>
+  </div>
+  <div class="card">
+   <h3>Core competencies</h3>
+   <ul class="clean">
+    <li>Embedded firmware development</li>
+    <li>Real-time systems (FreeRTOS)</li>
+    <li>Device driver development</li>
+    <li>Bootloader and firmware-update design</li>
+    <li>Flash file systems and persistent storage</li>
+    <li>Hardware–software integration and board bring-up</li>
+    <li>Embedded debugging and validation</li>
+   </ul>
+  </div>
+ </div>
+</div></section>
+
+<section id="skills"><div class="wrap reveal">
+ <h2>Technical skills</h2>
+ <p class="sub">Languages, silicon, buses and tools I work with every day</p>
+ <div class="grid">
+  <div class="card"><h3>Programming</h3><div class="chips"><span class="chip hi">Embedded C</span><span class="chip hi">C++</span><span class="chip">Linux system programming</span><span class="chip">Shell scripting</span><span class="chip">JavaScript (tooling)</span></div></div>
+  <div class="card"><h3>Microcontrollers</h3><div class="chips"><span class="chip hi">STM32 (Cortex-M)</span><span class="chip hi">ESP32</span><span class="chip">NXP LPC2129 (ARM7TDMI)</span></div></div>
+  <div class="card"><h3>RTOS</h3><div class="chips"><span class="chip hi">FreeRTOS</span><span class="chip">tasks</span><span class="chip">queues</span><span class="chip">semaphores</span><span class="chip">software timers</span><span class="chip">memory tuning</span></div></div>
+  <div class="card"><h3>Communication</h3><div class="chips"><span class="chip">UART</span><span class="chip">SPI</span><span class="chip">I2C</span><span class="chip">CAN</span><span class="chip">RS-485</span><span class="chip">MODBUS</span><span class="chip">LoRa</span></div></div>
+  <div class="card"><h3>Storage &amp; file systems</h3><div class="chips"><span class="chip">LittleFS</span><span class="chip">FAT/FAT32</span><span class="chip">SD card</span><span class="chip">QSPI NOR flash</span><span class="chip">Parallel NOR flash</span><span class="chip">I2C EEPROM</span></div></div>
+  <div class="card"><h3>Firmware services</h3><div class="chips"><span class="chip">Bootloaders &amp; firmware update</span><span class="chip">CRC / checksum data integrity</span><span class="chip">RTC timekeeping</span><span class="chip">Interrupt-driven I/O</span></div></div>
+  <div class="card"><h3>Peripherals &amp; interfaces</h3><div class="chips"><span class="chip">HD44780 character LCD</span><span class="chip">Matrix keypad</span><span class="chip">RFID readers (UART)</span><span class="chip">RTD / PT100</span><span class="chip">4–20 mA inputs</span><span class="chip">64×64 RGB LED matrix</span></div></div>
+  <div class="card"><h3>Tools</h3><div class="chips"><span class="chip">STM32CubeIDE</span><span class="chip">ESP-IDF</span><span class="chip">Arduino IDE</span><span class="chip">Keil µVision</span><span class="chip">GCC / Make</span><span class="chip">Git / GitHub</span><span class="chip">J-Link</span><span class="chip">ST-Link</span><span class="chip">Logic analyzer</span><span class="chip">Oscilloscope</span><span class="chip">Azure DevOps</span></div></div>
+ </div>
+</div></section>
+
+<section id="experience"><div class="wrap reveal">
+ <h2>Experience</h2>
+ <p class="sub">Where I have worked</p>
+ <div class="timeline">
+  <div class="job">
+   <h3>Avionics Software Engineer</h3>
+   <div class="org">XDLINX Space Labs</div>
+   <div class="when">May 2026 – present · Hyderabad</div>
+   <ul>
+    <li>Develop avionics flight software on STM32 under FreeRTOS, with task scheduling and memory usage tuned for deterministic real-time behaviour.</li>
+    <li>Write and maintain UART, SPI, I2C and CAN peripheral drivers used across onboard subsystems.</li>
+    <li>Integrate LittleFS on QSPI NOR flash for persistent onboard storage of configuration and telemetry.</li>
+    <li>Implement the bootloader and in-field firmware update mechanism.</li>
+    <li>Support board bring-up, hardware debugging and subsystem integration with the hardware team.</li>
+   </ul>
+  </div>
+  <div class="job">
+   <h3>Lead Hardware Engineer</h3>
+   <div class="org">The India Source – Growth Accelerator Technologies</div>
+   <div class="when">April 2026 – May 2026 · Hyderabad</div>
+   <ul>
+    <li>Led embedded hardware development on STM32 and ESP32 platforms.</li>
+    <li>Developed firmware in C/C++ using STM32CubeIDE, ESP-IDF and Arduino IDE.</li>
+    <li>Built graphical interfaces for 64×64 RGB LED matrix displays.</li>
+    <li>Validated hardware with oscilloscopes and logic analyzers.</li>
+   </ul>
+  </div>
+  <div class="job">
+   <h3>IoT Engineer</h3>
+   <div class="org">The India Source – Growth Accelerator Technologies</div>
+   <div class="when">October 2024 – March 2026 · Hyderabad</div>
+   <ul>
+    <li>Developed FreeRTOS-based firmware on STM32 and ESP32 for industrial monitoring and control.</li>
+    <li>Designed multitasking applications using tasks, queues and semaphores.</li>
+    <li>Integrated UART, SPI, I2C, LoRa and MODBUS communication links.</li>
+    <li>Interfaced RTD/PT100 temperature sensors and 4–20 mA analog inputs.</li>
+    <li>Implemented closed-loop PID control for industrial automation.</li>
+   </ul>
+  </div>
+ </div>
+</div></section>
+
+<section id="projects"><div class="wrap reveal">
+ <h2>Projects</h2>
+ <p class="sub">Each card with a <span class="sim-badge">▶ simulator</span> badge opens an interactive, browser-only model of the project so you can see how it works. Source code links go to GitHub.</p>
+
+ <div class="pgroup"><h3>Embedded &amp; RTOS</h3>
+ <div class="grid">
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>RTOS-Based Control System</h3><p>FreeRTOS task scheduling for sensor acquisition, PID control and communication modules on STM32 and ESP32: a sensor task feeding a queue, a control task blocked on it, a comms task woken from the UART ISR through a semaphore, and a low-priority logger.</p><div class="tags"><span>FreeRTOS</span><span>STM32</span><span>ESP32</span><span>queues</span><span>semaphores</span></div><div class="links"><a class="btn sm" href="sim/rtos.html">Run scheduler simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>PID Temperature &amp; Pressure Control</h3><p>Closed-loop PID control using RTD/PT100 and 4–20 mA sensors for industrial automation: discrete PID with derivative filtering and anti-windup, driving a heater or pump through timer PWM.</p><div class="tags"><span>PID</span><span>PT100</span><span>4–20 mA</span><span>PWM</span></div><div class="links"><a class="btn sm" href="sim/pid.html">Run PID simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>IoT Sensor Node with LoRa</h3><p>Low-power ESP32 + LoRa node for long-range wireless sensor data transmission: deep-sleep duty cycling, framed packets with CRC-16, link budget and battery life.</p><div class="tags"><span>ESP32</span><span>LoRa / SX1276</span><span>low power</span></div><div class="links"><a class="btn sm" href="sim/lora.html">Run LoRa simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Industrial Data Logger</h3><p>SD-card data logging with RTC time-stamping on a FAT file system: sector-buffered CSV records, daily file rotation, sensor-fault flags and safe handling of card removal.</p><div class="tags"><span>FatFs</span><span>SD / SPI</span><span>RTC</span><span>CSV</span></div><div class="links"><a class="btn sm" href="sim/datalogger.html">Run logger simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>RFID Attendance System</h3><p>NXP LPC2129 (ARM7, Keil): interrupt-driven UART tag reader with IN/OUT state kept in an I2C EEPROM so it survives resets; RTC-timestamped events on a 20×4 HD44780 LCD and streamed as CSV over serial; keypad menu on an external interrupt for setting the clock; Linux host logger in C (termios) that captures the stream to a spreadsheet file.</p><div class="tags"><span>LPC2129</span><span>ARM7</span><span>I2C EEPROM</span><span>RTC</span><span>LCD</span><span>termios</span></div><div class="links"><a class="btn sm" href="sim/rfid.html">Run RFID simulator</a><a class="btn sm sec" href="https://github.com/venu-konda/attendence-system-implementation-using-RFID" target="_blank" rel="noopener">GitHub</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Autonomous Smart Irrigation System</h3><p>ESP32, ESP-IDF, FreeRTOS: calibrated capacitive soil-moisture sensing with hysteresis pump control, run-time limit, soak pause, tank-level lockout, hardware fail-safe timer and fault detection; NVS-persisted settings, UART console, and Wi-Fi/MQTT telemetry with JSON commands; CI-built on ESP-IDF.</p><div class="tags"><span>ESP-IDF</span><span>NVS</span><span>MQTT</span><span>state machine</span><span>CI</span></div><div class="links"><a class="btn sm" href="sim/irrigation.html">Run irrigation simulator</a><a class="btn sm sec" href="https://github.com/venu-konda/ESP32-Smart-Irrigation" target="_blank" rel="noopener">GitHub</a></div></div>
+ </div></div>
+
+ <div class="pgroup"><h3>Linux system programming</h3>
+ <div class="grid">
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Full-Duplex IPC</h3><p>Inter-process communication between two processes using a pair of FIFOs (named pipes), one per direction, with a reader thread blocked in <code>read()</code> and clean end-of-file handling when a peer exits.</p><div class="tags"><span>mkfifo</span><span>open / read / write</span><span>pthreads</span></div><div class="links"><a class="btn sm" href="sim/ipc.html">Run IPC simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Client–Server Student DBMS</h3><p>TCP/IP socket-based database system: a server holding a student table and a command-line client sending line-oriented requests over a socket.</p><div class="tags"><span>TCP sockets</span><span>client / server</span><span>C</span></div><div class="links"><a class="btn sm" href="sim/dbms.html">Run DBMS simulator</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>C Preprocessor from Scratch</h3><p>Modular implementation of comment removal, <code>#include</code> expansion and <code>#define</code> macro replacement over a single dynamically resized buffer, built with Make.</p><div class="tags"><span>C</span><span>Make</span><span>parsing</span></div><div class="links"><a class="btn sm" href="sim/preprocessor.html">Run preprocessor</a><a class="btn sm sec" href="https://github.com/venu-konda/preprocessor" target="_blank" rel="noopener">GitHub</a></div></div>
+ </div></div>
+
+ <div class="pgroup"><h3>C/C++ &amp; tools</h3>
+ <div class="grid">
+  <div class="card project"><span class="sim-badge">▶ live tool</span><h3>Universal Data Converter &amp; CRC Tool</h3><p>Dependency-free browser tool (JavaScript, GitHub Pages) converting bytes between hex, decimal, octal, binary, Base64 and text with 16/32/64-bit and IEEE 754 views in both byte orders; a parametric CRC engine with a 104-algorithm catalog plus custom polynomials, frame verify, append and identify modes, C code generation and a self-test against standard check values.</p><div class="tags"><span>JavaScript</span><span>CRC</span><span>MD5 / SHA</span><span>GitHub Pages</span></div><div class="links"><a class="btn sm" href="https://venu-konda.github.io/data-converter-crc/" target="_blank" rel="noopener">Open live tool</a><a class="btn sm sec" href="https://github.com/venu-konda/data-converter-crc" target="_blank" rel="noopener">GitHub</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Infix to Postfix Converter</h3><p>Stack-based expression parsing and evaluation in C: shunting-yard conversion with precedence and associativity, then postfix evaluation with an operand stack.</p><div class="tags"><span>C</span><span>stack</span><span>parsing</span></div><div class="links"><a class="btn sm" href="sim/postfix.html">Run converter</a></div></div>
+  <div class="card project"><span class="sim-badge">▶ simulator</span><h3>Shopping Cart &amp; Bill Payment (C++)</h3><p>Console application using classes, static and const members, friend classes and pass-by-reference, with password-protected payment from a bank account.</p><div class="tags"><span>C++</span><span>OOP</span><span>static / const</span><span>friend</span></div><div class="links"><a class="btn sm" href="sim/cart.html">Run shopping app</a><a class="btn sm sec" href="https://github.com/venu-konda/shopping-app" target="_blank" rel="noopener">GitHub</a></div></div>
+  <div class="card project"><h3>More on GitHub</h3><p>Collections of embedded, C/C++ and Linux programming work: ARM7 and 8051 firmware, data structures, sorting, socket programs, and topic-organised C exercises.</p><div class="tags"><span>LPC2148</span><span>8051</span><span>sockets</span><span>data structures</span></div><div class="links"><a class="btn sm sec" href="https://github.com/venu-konda/embedded-systems-workspace" target="_blank" rel="noopener">embedded-systems-workspace</a><a class="btn sm sec" href="https://github.com/venu-konda/c-programming-exercises" target="_blank" rel="noopener">c-programming-exercises</a></div></div>
+ </div></div>
+</div></section>
+
+<section id="simulators"><div class="wrap reveal">
+ <h2>Simulators</h2>
+ <p class="sub">All the interactive demos in one place. They run entirely in your browser, on desktop or phone, with no installs.</p>
+ <div class="simlist">
+  <a href="sim/rtos.html"><em>⏱</em><b>FreeRTOS scheduler</b><span>Tasks, priorities, queue, semaphore, ISR and a tick-level timeline with deadline misses.</span></a>
+  <a href="sim/pid.html"><em>🌡</em><b>PID control loop</b><span>Tune Kp, Ki, Kd on a temperature or pressure process with dead time, noise and disturbances.</span></a>
+  <a href="sim/irrigation.html"><em>💧</em><b>ESP32 smart irrigation</b><span>Moisture state machine, pump safety limits, fail-safe timer, UART console and MQTT.</span></a>
+  <a href="sim/rfid.html"><em>🪪</em><b>RFID attendance</b><span>Tag scan → EEPROM → LCD → CSV over UART, with RTC keypad menu and power-cycle test.</span></a>
+  <a href="sim/lora.html"><em>📡</em><b>LoRa sensor node</b><span>Time on air, path loss, RSSI/SNR, packet loss and battery life from SF, BW and distance.</span></a>
+  <a href="sim/datalogger.html"><em>💾</em><b>SD-card data logger</b><span>FatFs sector buffering, f_sync policy, daily rotation and card-removal behaviour.</span></a>
+  <a href="sim/ipc.html"><em>🔁</em><b>FIFO IPC</b><span>Two processes, two named pipes, blocking open/read and end-of-file.</span></a>
+  <a href="sim/dbms.html"><em>🗄</em><b>Client–server DBMS</b><span>TCP requests and responses on the wire with socket calls logged on both sides.</span></a>
+  <a href="sim/preprocessor.html"><em>⚙</em><b>C preprocessor</b><span>Comment removal, include expansion and macro replacement, stage by stage.</span></a>
+  <a href="sim/postfix.html"><em>🧮</em><b>Infix → postfix</b><span>Shunting-yard steps with the operator stack, then postfix evaluation.</span></a>
+  <a href="sim/cart.html"><em>🛒</em><b>Shopping cart (C++)</b><span>Menu-driven cart and password-protected bank payment with shared static state.</span></a>
+  <a href="https://venu-konda.github.io/data-converter-crc/" target="_blank" rel="noopener"><em>🔢</em><b>Data converter &amp; CRC tool</b><span>The live production tool: conversions, hashes, 104 CRC algorithms, C code generation.</span></a>
+ </div>
+</div></section>
+
+<section id="education"><div class="wrap reveal">
+ <h2>Education &amp; training</h2>
+ <p class="sub">Degrees, training and languages</p>
+ <div class="grid">
+  <div class="card"><h3>B.Tech, Electrical and Electronics Engineering</h3><div class="kv"><b>College</b><span>Vaageswari College of Engineering, JNTUH</span><b>Years</b><span>2020 – 2023</span><b>Place</b><span>Karimnagar</span></div></div>
+  <div class="card"><h3>Diploma, Electrical and Electronics Engineering</h3><div class="kv"><b>College</b><span>SRRS Government Polytechnic College</span><b>Years</b><span>2017 – 2020</span><b>Place</b><span>Sircilla</span></div></div>
+  <div class="card"><h3>Advanced Embedded Systems Training</h3><div class="kv"><b>Institute</b><span>Vector India, Hyderabad</span><b>Covered</b><span>Hardware design, firmware development and RTOS concepts in C, C++ and Embedded C</span></div></div>
+  <div class="card"><h3>Languages</h3><div class="chips"><span class="chip">English</span><span class="chip">Telugu</span><span class="chip">Hindi</span></div></div>
+ </div>
+</div></section>
+
+<section id="contact"><div class="wrap reveal">
+ <h2>Contact</h2>
+ <p class="sub">For roles, collaborations or questions about any of the projects, reach me any of these ways.</p>
+ <div class="contact">
+  <div class="clinks">
+   <a href="mailto:kondavenuk@gmail.com"><span class="ic">✉</span><div><b>E-mail</b><span>kondavenuk@gmail.com</span></div></a>
+   <a href="tel:+919885797985"><span class="ic">📞</span><div><b>Phone</b><span>+91 98857 97985</span></div></a>
+   <a href="https://wa.me/919885797985" target="_blank" rel="noopener"><span class="ic">💬</span><div><b>WhatsApp</b><span>chat on +91 98857 97985</span></div></a>
+   <a href="https://www.linkedin.com/in/venu-konda-dev" target="_blank" rel="noopener"><span class="ic">in</span><div><b>LinkedIn</b><span>linkedin.com/in/venu-konda-dev</span></div></a>
+   <a href="https://github.com/venu-konda" target="_blank" rel="noopener"><span class="ic">&lt;/&gt;</span><div><b>GitHub</b><span>github.com/venu-konda</span></div></a>
+   <a href="mailto:kondavenuk@gmail.com" data-copy="kondavenuk@gmail.com"><span class="ic">⧉</span><div><b>Copy e-mail address</b><span>click to copy</span></div></a>
+  </div>
+  <div class="card">
+   <h3>Send a message</h3>
+   <form id="contactForm" novalidate>
+    <label for="name">Your name</label><input id="name" name="name" type="text" required autocomplete="name">
+    <label for="email">Your e-mail</label><input id="email" name="email" type="email" autocomplete="email">
+    <label for="subject">Subject</label><input id="subject" name="subject" type="text">
+    <label for="message">Message</label><textarea id="message" name="message" required></textarea>
+    <div class="btns" style="margin-top:14px"><button class="btn" type="submit">Send by e-mail</button><a class="btn sec" id="waBtn" href="https://wa.me/919885797985" target="_blank" rel="noopener">Send on WhatsApp</a></div>
+    <div id="formnote"></div>
+   </form>
+  </div>
+ </div>
+</div></section>
+</main>
+
+<footer><div class="wrap"><span>© <span id="year"></span> Venu Konda · Hyderabad</span><span>Plain HTML, CSS and JavaScript · hosted on GitHub Pages · <a href="https://github.com/venu-konda/venu-konda">source</a></span></div></footer>
+<div id="toast"></div>
+<script src="assets/js/site.js"></script>
+</body>
+</html>

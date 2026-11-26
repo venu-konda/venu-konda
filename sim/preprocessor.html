@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>C Preprocessor Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.tabs button{background:#1f2937;color:#cbd5e1;padding:6px 12px;font-size:13px}.tabs button.on{background:var(--accent);color:var(--accent-ink)}
+textarea.code{min-height:300px;font-size:13px}
+.stage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:900px){.stage{grid-template-columns:minmax(0,1fr)}}
+pre.out{margin:0;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:12.5px/1.45 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto}
+.pipe{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}.pipe span{padding:5px 10px;border-radius:7px;background:#1f2937;border:1px solid var(--line)}.pipe b{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>C Preprocessor from Scratch</h1><span class="tag">C · Make · single dynamically resized buffer</span> <a class="back" href="https://github.com/venu-konda/preprocessor" target="_blank" rel="noopener">GitHub ↗</a></div></div>
+<main class="wrap">
+<p class="intro">My preprocessor reads a <code>.c</code> file into one heap buffer and runs three passes over it, producing the <code>.i</code> file: comment removal, <code>#include</code> expansion and object-like <code>#define</code> replacement. This page runs the same three stages in JavaScript on an editable source file and virtual header files, so you can see what each pass does to the buffer.</p>
+<div class="pipe" style="margin-bottom:14px"><span>readFromFile()</span><b>→</b><span>removeComments()</span><b>→</b><span>fileInclusion()</span><b>→</b><span>macroReplacement()</span><b>→</b><span>writeToFile()</span></div>
+<div class="layout wide">
+ <div class="stack">
+  <div class="panel">
+   <h2>Source files</h2>
+   <div class="tabs" id="tabs"></div>
+   <textarea class="code mono" id="src" spellcheck="false"></textarea>
+   <div class="btns"><button id="runb">Run preprocessor</button><button class="sec" id="resetb">Reset samples</button></div>
+   <label class="check"><input type="checkbox" id="auto" checked> Re-run while typing</label>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Buffer after each stage</h2>
+   <div class="stage">
+    <div><h3>1 · removeComments</h3><pre class="out" id="s1"></pre></div>
+    <div><h3>2 · fileInclusion</h3><pre class="out" id="s2"></pre></div>
+    <div><h3>3 · macroReplacement → main.i</h3><pre class="out" id="s3"></pre></div>
+   </div>
+   <div class="stats" id="stats"></div>
+  </div>
+  <div class="panel"><h2>Trace</h2><div class="console" id="log" style="height:170px"></div></div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const SAMPLES={
+'main.c':`/* main.c — sample input for the preprocessor
+   (block comments are removed) */
+#include <stdio.h>
+#include "config.h"
+#include "myheader.h"
+
+#define PI 3.14159
+#define SQUARE(x) ((x)*(x))   // function-like macros are left alone
+
+int main(void)
+{
+    int radius = MAX_RADIUS;            // trailing comment
+    char *msg = "PI stays // inside strings";
+    printf("%s\\n", msg);
+    printf("area=%f\\n", PI * radius * radius);
+    printf("limit=%d\\n", BUFFER_SIZE * 2);
+    return SUCCESS;
+}
+`,
+'config.h':`/* config.h — project settings */
+#define MAX_RADIUS 10
+#define BUFFER_SIZE 256
+#define SUCCESS 0
+`,
+'myheader.h':`// myheader.h — prototypes
+#include "config.h"   /* nested include */
+int helper(int value);
+#define DEBUG_LEVEL 2
+`};
+const SYSTEM={'stdio.h':`/* <stdio.h> — the real tool pastes the system header from /usr/include here; in this demo it is stubbed to a few lines */
+typedef struct _IO_FILE FILE;
+extern FILE *stdin, *stdout, *stderr;
+int printf(const char *format, ...);
+int puts(const char *s);
+`};
+let files=JSON.parse(JSON.stringify(SAMPLES)),cur='main.c';
+const log=makeLog($('log'),100);
+let stats;
+/* stage 1: strip comments, outside string/char literals */
+function removeComments(s){
+ let o='',i=0,n=0;
+ while(i<s.length){
+  const c=s[i],d=s[i+1];
+  if(c==='"'||c==="'"){let j=i+1;while(j<s.length&&s[j]!==c){if(s[j]==='\\')j++;j++}o+=s.slice(i,j+1);i=j+1;continue}
+  if(c==='/'&&d==='*'){const e=s.indexOf('*/',i+2);const body=s.slice(i,e<0?s.length:e+2);n++;o+=body.includes('\n')?'\n'.repeat(body.split('\n').length-1):' ';i=e<0?s.length:e+2;continue}
+  if(c==='/'&&d==='/'){const e=s.indexOf('\n',i);n++;i=e<0?s.length:e;continue}
+  o+=c;i++;
+ }
+ return[o,n];
+}
+/* stage 2: expand #include lines, recursively (depth-limited) */
+function fileInclusion(s,depth=0,seen=[]){
+ let n=0;
+ const out=s.split('\n').map(line=>{
+  const m=line.match(/^\s*#\s*include\s*(<([^>]+)>|"([^"]+)")/);
+  if(!m)return line;
+  const sys=!!m[2],name=m[2]||m[3];
+  if(depth>8){log(`include depth limit reached at ${name}`,'err',false);return line}
+  const body=sys?SYSTEM[name]:files[name];
+  if(body===undefined){log(`fileInclusion: cannot open ${sys?'<'+name+'>':'"'+name+'"'} — line kept as is`,'err',false);return line}
+  n++;log(`fileInclusion: ${sys?'<'+name+'>':'"'+name+'"'} → ${body.length} bytes pasted${seen.includes(name)?' (again: no include guards in this tool)':''}`,'',false);
+  const [nc]=removeComments(body);const [inner,m2]=fileInclusion(nc,depth+1,[...seen,name]);n+=m2;
+  return `/* ---- begin ${name} ---- */\n${inner.replace(/\n$/,'')}\n/* ---- end ${name} ---- */`;
+ }).join('\n');
+ return[out,n];
+}
+/* stage 3: collect object-like #define NAME VALUE, drop the lines, replace whole-word identifiers outside strings */
+function macroReplacement(s){
+ const macros=new Map();let defs=0,reps=0;
+ let body=s.split('\n').filter(line=>{
+  const m=line.match(/^\s*#\s*define\s+([A-Za-z_]\w*)(\([^)]*\))?\s*(.*)$/);
+  if(!m)return true;
+  if(m[2]){log(`macroReplacement: function-like macro ${m[1]}${m[2]} is not supported — left in place`,'warn',false);return true}
+  macros.set(m[1],m[3].trim());defs++;log(`#define ${m[1]} = "${m[3].trim()}"`,'dim',false);return false;
+ }).join('\n');
+ if(macros.size){
+  const re=new RegExp('("(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\')|\\b('+[...macros.keys()].map(k=>k.replace(/[$]/g,'\\$')).join('|')+')\\b','g');
+  body=body.replace(re,(all,str,id)=>{if(str)return str;reps++;return macros.get(id)});
+ }
+ return[body,defs,reps,macros];
+}
+function run(){
+ $('log').innerHTML='';const src=files['main.c'];
+ const [s1,c]=removeComments(src);$('s1').textContent=s1;
+ const [s2,inc]=fileInclusion(s1);$('s2').textContent=s2;
+ const [s3,defs,reps,macros]=macroReplacement(s2);$('s3').textContent=s3;
+ $('stats').innerHTML=[['input bytes',src.length],['comments removed',c],['files included',inc],['macros defined',defs],['replacements',reps],['output bytes',s3.length]].map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="n">${v}</div></div>`).join('');
+ log(`writeToFile("main.i"): ${s3.length} bytes`,'ok',false);
+}
+function tabs(){$('tabs').innerHTML=Object.keys(files).map(f=>`<button class="${f===cur?'on':''}" data-f="${f}">${f}</button>`).join('')+`<button data-f="+">+ new header</button>`;
+ $('tabs').querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.f==='+'){const n=prompt('Header file name','extra.h');if(!n)return;files[n]=files[n]||`/* ${n} */\n#define EXTRA 1\n`;cur=n}else cur=b.dataset.f;$('src').value=files[cur];tabs()}))}
+$('src').addEventListener('input',()=>{files[cur]=$('src').value;if($('auto').checked)run()});
+$('runb').addEventListener('click',run);
+$('resetb').addEventListener('click',()=>{files=JSON.parse(JSON.stringify(SAMPLES));cur='main.c';$('src').value=files[cur];tabs();run()});
+$('src').value=files[cur];tabs();run();
+</script>
+</body>
+</html>

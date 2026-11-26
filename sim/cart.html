@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Shopping Cart &amp; Bill Payment Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.prod td:last-child,.prod th:last-child{text-align:right}
+.menu button{width:100%;text-align:left;background:#1f2937;color:#e5e7eb;margin-top:6px}
+.cls{font:12.5px/1.5 ui-monospace,monospace;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre;overflow:auto;color:#cbd5e1}
+.cls b{color:var(--accent)}.cls i{color:var(--muted);font-style:normal}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>Shopping Cart &amp; Bill Payment</h1><span class="tag">C++ · classes · static/const · friend · references</span> <a class="back" href="https://github.com/venu-konda/shopping-app" target="_blank" rel="noopener">GitHub ↗</a></div></div>
+<main class="wrap">
+<p class="intro">A browser version of my console C++ application: pick products into a cart, total the bill and pay it from a built-in bank account that checks a password. The account balance and the password-attempt counter are <code>static</code> members, so they are shared by every object and the lock-out survives new menu objects, exactly as in the C++ code.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Products</h2>
+   <div class="tscroll"><table class="prod"><thead><tr><th>#</th><th>Item</th><th>Price (₹)</th></tr></thead><tbody id="prods"></tbody></table></div>
+  </div>
+  <div class="panel">
+   <h2>Menu</h2>
+   <div class="menu" id="menu"></div>
+   <form class="cmdline" id="cf" style="margin-top:10px"><input type="text" id="ci" placeholder="type a menu number, product number, qty or password"><button>Enter</button></form>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel"><h2>Console</h2><div class="terminal" id="t" style="min-height:300px;max-height:420px"></div></div>
+  <div class="split">
+   <div class="panel"><h2>Cart</h2><div class="tscroll"><table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody id="cart"></tbody></table></div><div class="stats"><div class="stat"><div class="k">Total</div><div class="n" id="tot">₹0</div></div><div class="stat"><div class="k">Bank balance</div><div class="n" id="bal">—</div></div><div class="stat"><div class="k">Password attempts left</div><div class="n" id="att">3</div></div></div></div>
+   <div class="panel"><h2>Classes</h2><div class="cls"><b>class</b> Bank {
+  <b>static</b> <b>int</b> cnt;            <i>// accounts created</i>
+  <b>static</b> <b>int</b> passwordCount;  <i>// shared attempts</i>
+  <b>const</b> <b>int</b> accNo;
+  <b>double</b> balance; <b>int</b> password;
+  <b>friend</b> <b>class</b> Product;       <i>// Product::PayBill()</i>
+};
+<b>class</b> Product {
+  <b>void</b> AddToCart(); <b>void</b> ViewCart();
+  <b>double</b> Total();
+  <b>bool</b> PayBill(Bank &amp;acc);         <i>// by reference</i>
+};</div></div>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const PRODUCTS=[['Laptop',55000],['Mobile phone',18000],['Headphones',1500],['Keyboard',900],['Mouse',450],['Pen drive 64 GB',600]];
+const Bank={cnt:1,passwordCount:3,accNo:100245,balance:60000,password:1234,locked:false};
+let cart=[],mode='menu',pend={};
+const T=(s,c)=>{const d=document.createElement('div');if(c)d.className=c;d.textContent=s;$('t').appendChild(d);$('t').scrollTop=1e9};
+const inr=v=>'₹'+v.toLocaleString('en-IN');
+const total=()=>cart.reduce((a,c)=>a+c.price*c.qty,0);
+function draw(){
+ $('prods').innerHTML=PRODUCTS.map((p,i)=>`<tr><td>${i+1}</td><td>${p[0]}</td><td>${p[1].toLocaleString('en-IN')}</td></tr>`).join('');
+ $('cart').innerHTML=cart.map(c=>`<tr><td>${c.name}</td><td>${c.qty}</td><td>${inr(c.price*c.qty)}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">empty</td></tr>';
+ $('tot').textContent=inr(total());$('bal').textContent=inr(Bank.balance);$('att').textContent=Bank.locked?'LOCKED':Bank.passwordCount;
+}
+function menu(){mode='menu';T('');T('===== ONLINE SHOPPING =====','hi');T('1. Add product to cart');T('2. View cart');T('3. Total bill');T('4. Pay bill');T('5. Exit');T('Enter choice: ','dim')}
+function handle(v){
+ v=v.trim();if(!v)return;T('> '+v,'hi');
+ if(mode==='menu'){
+  if(v==='1'){mode='prod';T('Enter product number (1-'+PRODUCTS.length+'): ','dim')}
+  else if(v==='2'){if(!cart.length)T('Cart is empty');cart.forEach(c=>T(`${c.name.padEnd(18)} x${c.qty}  ${inr(c.price*c.qty)}`));menu()}
+  else if(v==='3'){T(`Total bill: ${inr(total())}`,'p');menu()}
+  else if(v==='4'){if(!cart.length){T('Nothing to pay','err');return menu()}if(Bank.locked){T('Account locked after 3 wrong passwords. Restart the program.','err');return menu()}mode='pass';T(`Bank::PayBill(acc #${Bank.accNo}) amount ${inr(total())}`);T('Enter password: ','dim')}
+  else if(v==='5'){T('Thank you for shopping!','p');T('(program exited — reload to restart; static members keep their values while the page lives)','dim');mode='exit'}
+  else{T('Invalid choice','err');menu()}
+ }else if(mode==='prod'){const i=parseInt(v,10)-1;if(!(i>=0&&i<PRODUCTS.length)){T('Invalid product','err');return menu()}pend={i};mode='qty';T('Quantity: ','dim')}
+ else if(mode==='qty'){const q=parseInt(v,10);if(!(q>0&&q<100)){T('Invalid quantity','err');return menu()}const [name,price]=PRODUCTS[pend.i];const c=cart.find(c=>c.name===name);if(c)c.qty+=q;else cart.push({name,price,qty:q});T(`Added ${q} × ${name}`,'p');draw();menu()}
+ else if(mode==='pass'){
+  if(parseInt(v,10)===Bank.password){const amt=total();if(amt>Bank.balance){T(`Insufficient balance (${inr(Bank.balance)})`,'err');return menu()}Bank.balance-=amt;T('Password OK. Payment successful.','p');T(`Paid ${inr(amt)} · remaining balance ${inr(Bank.balance)}`,'p');T('---- RECEIPT ----');cart.forEach(c=>T(`${c.name.padEnd(18)} x${c.qty}  ${inr(c.price*c.qty)}`));T(`TOTAL ${inr(amt)}`);cart=[];Bank.passwordCount=3;draw();menu()}
+  else{Bank.passwordCount--;draw();if(Bank.passwordCount<=0){Bank.locked=true;draw();T('Wrong password 3 times — account locked (static passwordCount reached 0)','err');return menu()}T(`Wrong password, ${Bank.passwordCount} attempt(s) left`,'err');T('Enter password: ','dim')}
+ }else if(mode==='exit'){T('program has exited','dim')}
+}
+$('cf').addEventListener('submit',e=>{e.preventDefault();handle($('ci').value);$('ci').value=''});
+$('menu').innerHTML=['1 · Add product','2 · View cart','3 · Total bill','4 · Pay bill (password 1234)','5 · Exit'].map((m,i)=>`<button data-m="${i+1}">${m}</button>`).join('');
+$('menu').querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>{if(mode!=='menu'){mode='menu'}handle(b.dataset.m)}));
+T('$ g++ product1.cpp -o shop && ./shop','dim');T(`Bank account #${Bank.accNo} created (Bank::cnt = ${Bank.cnt}), balance ${inr(Bank.balance)}`,'dim');draw();menu();
+</script>
+</body>
+</html>

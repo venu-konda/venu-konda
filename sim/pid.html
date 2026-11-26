@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>PID Control Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>PID Temperature &amp; Pressure Control</h1><span class="tag">STM32 · FreeRTOS · PT100 · 4–20 mA</span></div></div>
+<main class="wrap">
+<p class="intro">A closed-loop PID controller driving a simulated industrial process, as in the temperature and pressure control firmware I wrote on STM32/ESP32. The plant is a first-order system with dead time; the sensor is a PT100 RTD (resistance shown in ohms) or a 4–20 mA pressure transmitter. Tune the gains and watch the response.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Process</h2>
+   <label>Process type</label>
+   <select id="proc"><option value="temp">Temperature chamber · PT100 RTD · heater PWM</option><option value="press">Pressure vessel · 4–20 mA transmitter · pump PWM</option></select>
+   <label>Setpoint <span class="v" id="spv"></span></label><input type="range" id="sp" min="0" max="100" step="1" value="60">
+   <label>Dead time (transport delay) <span class="v" id="deadv"></span></label><input type="range" id="dead" min="0" max="10" step="0.5" value="2">
+   <label>Sensor noise <span class="v" id="noisev"></span></label><input type="range" id="noise" min="0" max="2" step="0.1" value="0.3">
+   <div class="btns"><button class="warn" id="dist">Apply disturbance</button></div>
+   <div class="note" id="procnote"></div>
+  </div>
+  <div class="panel">
+   <h2>Controller</h2>
+   <label>Kp (proportional) <span class="v" id="kpv"></span></label><input type="range" id="kp" min="0" max="20" step="0.1" value="3">
+   <label>Ki (integral, 1/s) <span class="v" id="kiv"></span></label><input type="range" id="ki" min="0" max="2" step="0.01" value="0.15">
+   <label>Kd (derivative, s) <span class="v" id="kdv"></span></label><input type="range" id="kd" min="0" max="30" step="0.5" value="5">
+   <label>Sample time Ts</label>
+   <select id="ts"><option value="0.05">50 ms</option><option value="0.1" selected>100 ms</option><option value="0.5">500 ms</option><option value="1">1 s</option></select>
+   <label class="check"><input type="checkbox" id="aw" checked> Anti-windup (conditional integration)</label>
+   <h3>Presets</h3>
+   <div class="btns"><button class="sec" data-p="p">P only</button><button class="sec" data-p="pi">PI</button><button class="sec" data-p="pid">PID (tuned)</button><button class="sec" data-p="agg">Too aggressive</button></div>
+  </div>
+  <div class="panel">
+   <h2>Simulation</h2>
+   <div class="btns"><button id="run">Pause</button><button class="sec" id="reset">Reset</button></div>
+   <label>Speed</label><select id="speed"><option value="1">1× (real time)</option><option value="5" selected>5×</option><option value="20">20×</option></select>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Process variable</h2>
+   <canvas class="chart" id="c1"></canvas>
+   <div class="stats">
+    <div class="stat"><div class="k">Process value</div><div class="n" id="pvN">—</div></div>
+    <div class="stat"><div class="k">Setpoint</div><div class="n" id="spN">—</div></div>
+    <div class="stat"><div class="k">Error</div><div class="n" id="errN">—</div></div>
+    <div class="stat"><div class="k" id="sensK">Sensor</div><div class="n sm" id="sensN">—</div></div>
+    <div class="stat"><div class="k">Overshoot</div><div class="n" id="osN">—</div></div>
+    <div class="stat"><div class="k">Settling (±2 %)</div><div class="n" id="setN">—</div></div>
+   </div>
+  </div>
+  <div class="panel">
+   <h2>Controller output <span class="muted small" id="outLabel"></span></h2>
+   <canvas class="chart" id="c2" style="height:200px"></canvas>
+   <div class="bar" style="margin-top:10px"><i id="outbar"></i></div>
+   <div class="stats">
+    <div class="stat"><div class="k">Output (PWM duty)</div><div class="n" id="outN">—</div></div>
+    <div class="stat"><div class="k">P term</div><div class="n" id="pN">—</div></div>
+    <div class="stat"><div class="k">I term</div><div class="n" id="iN">—</div></div>
+    <div class="stat"><div class="k">D term</div><div class="n" id="dN">—</div></div>
+   </div>
+  </div>
+  <div class="panel">
+   <h2>How it works</h2>
+   <p class="small muted" style="margin:0">Every <b>Ts</b> the control task samples the sensor, computes <code>e = SP − PV</code> and the output <code>u = Kp·e + Ki·∫e·dt + Kd·d(−PV)/dt</code>, clamped to 0–100 % and written to a timer PWM channel. The derivative acts on the measurement (not the error) through a first-order filter, so setpoint steps do not kick the output, and the integrator is frozen while the output is saturated (anti-windup). In the firmware this runs in a FreeRTOS task woken by a periodic timer, with the ADC/RTD reading taken through an SPI driver and the PWM written to a hardware timer.</p>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const PROC={
+ temp:{unit:'°C',min:0,max:120,amb:25,gain:150,tau:40,noise:1,distLoad:35,distTime:15,sensK:'PT100 resistance',out:'Heater PWM',
+  sens:T=>fmt(100*(1+3.9083e-3*T-5.775e-7*T*T),2)+' Ω',distName:'Open chamber door (15 s heat loss)',note:'Plant: first-order thermal chamber, 150 °C rise at 100 % heater, time constant 40 s, ambient 25 °C. The PT100 resistance follows the Callendar–Van Dusen equation.',
+  presets:{p:[5,0,0],pi:[2,0.1,0],pid:[3,0.15,5],agg:[12,1,0]}},
+ press:{unit:'bar',min:0,max:10,amb:0,gain:12,tau:8,noise:0.05,distLoad:3,distTime:10,sensK:'Loop current',out:'Pump PWM',
+  sens:p=>fmt(4+16*clamp(p,0,10)/10,2)+' mA',distName:'Open relief valve (10 s leak)',note:'Plant: pressure vessel, 12 bar at 100 % pump, time constant 8 s, loss proportional to pressure. The transmitter maps 0–10 bar to 4–20 mA; below 3.6 mA the firmware flags a wire break.',
+  presets:{p:[20,0,0],pi:[12,2.5,0],pid:[15,3,2],agg:[60,20,0]}}
+};
+let proc='temp',t=0,pv=25,meas=25,delay=[],dist=0,ctrl,metrics,plotAcc=0;
+const c1=new Chart($('c1'),{window:240,yLabel:'',series:[{name:'Process value',color:'#38bdf8'},{name:'Setpoint',color:'#f59e0b',dash:[6,4]},{name:'Measured (noisy)',color:'#64748b',width:1}]});
+const c2=new Chart($('c2'),{window:240,yMin:-20,yMax:120,yLabel:'%',series:[{name:'Output %',color:'#22c55e'},{name:'P',color:'#38bdf8',width:1},{name:'I',color:'#a78bfa',width:1},{name:'D',color:'#f472b6',width:1}]});
+const P=()=>PROC[proc];
+const SP=()=>P().min+parseFloat($('sp').value)/100*(P().max-P().min);
+function resetCtrl(){ctrl={i:0,prevMeas:pv,dFilt:0,acc:0,out:0,p:0,d:0}}
+function resetMetrics(){metrics={sp:SP(),start:t,peak:-Infinity,lastOut:t,settled:null,startPv:pv}}
+function reset(){const c=P();t=0;plotAcc=0;pv=c.amb;meas=pv;delay=[];dist=0;resetCtrl();resetMetrics();c1.clear();c2.clear();c1.opt.yMin=c.min;c1.opt.yMax=c.max;c1.opt.yLabel=c.unit;draw()}
+function sample(){
+ const c=P(),Ts=parseFloat($('ts').value),Kp=+$('kp').value,Ki=+$('ki').value,Kd=+$('kd').value;
+ meas=pv+(Math.random()-0.5)*2*(+$('noise').value)*c.noise;
+ const sp=SP(),e=sp-meas,p=Kp*e;
+ let i=ctrl.i+Ki*e*Ts;
+ const Tf=0.5,a=Ts/(Ts+Tf),dRaw=-(meas-ctrl.prevMeas)/Ts;ctrl.dFilt+=a*(dRaw-ctrl.dFilt);const d=Kd*ctrl.dFilt;
+ let out=p+i+d;
+ if(out>100){if($('aw').checked&&e>0)i=ctrl.i;out=100}else if(out<0){if($('aw').checked&&e<0)i=ctrl.i;out=0}
+ Object.assign(ctrl,{i,p,d,out,prevMeas:meas});
+}
+function step(dt){
+ const c=P(),Ts=parseFloat($('ts').value),dead=+$('dead').value;
+ ctrl.acc+=dt;if(ctrl.acc>=Ts-1e-9){ctrl.acc-=Ts;sample()}
+ delay.push({t,u:ctrl.out});while(delay.length>1&&delay[1].t<=t-dead)delay.shift();
+ const u=delay[0].t<=t-dead?delay[0].u:0;
+ const load=dist>0?c.distLoad:0;if(dist>0)dist-=dt;
+ pv+=((u/100)*c.gain-(pv-c.amb)-load)/c.tau*dt;
+ t+=dt;
+ /* metrics for the latest setpoint */
+ const span=c.max-c.min,sp=metrics.sp;
+ if(sp!==SP())resetMetrics();
+ const dir=sp>=metrics.startPv?1:-1;if(dir*(pv-sp)>dir*(metrics.peak-sp)||metrics.peak===-Infinity)metrics.peak=pv;
+ if(Math.abs(pv-sp)>0.02*span){metrics.lastOut=t;metrics.settled=null}else if(metrics.settled===null&&t-metrics.lastOut>=5)metrics.settled=metrics.lastOut-metrics.start;
+ plotAcc+=dt;if(plotAcc>=0.2){plotAcc-=0.2;c1.push(t,[pv,sp,meas]);c2.push(t,[ctrl.out,ctrl.p,ctrl.i,ctrl.d])}
+}
+function draw(){
+ const c=P(),sp=SP(),span=c.max-c.min;c1.draw();c2.draw();
+ $('pvN').textContent=fmt(pv,1)+' '+c.unit;$('spN').textContent=fmt(sp,1)+' '+c.unit;$('errN').textContent=fmt(sp-pv,2)+' '+c.unit;
+ $('sensK').textContent=c.sensK;$('sensN').textContent=c.sens(meas);
+ const os=metrics.peak===-Infinity?0:(sp>=metrics.startPv?metrics.peak-sp:sp-metrics.peak);
+ $('osN').textContent=os>0.005*span?fmt(os,1)+' '+c.unit+' ('+fmt(100*os/Math.max(1e-6,Math.abs(sp-metrics.startPv)),0)+' %)':'none';
+ $('setN').textContent=metrics.settled!==null?fmt(metrics.settled,0)+' s':'—';
+ $('outN').textContent=fmt(ctrl.out,1)+' %';$('pN').textContent=fmt(ctrl.p,1);$('iN').textContent=fmt(ctrl.i,1);$('dN').textContent=fmt(ctrl.d,1);
+ $('outbar').style.width=ctrl.out+'%';$('outLabel').textContent='('+c.out+')';
+}
+const loop=makeLoop(step,draw,50);
+bindRange('sp','spv',v=>fmt(SP(),1)+' '+P().unit);
+bindRange('dead','deadv',v=>fmt(v,1)+' s');bindRange('noise','noisev',v=>fmt(v,1)+' ×');
+bindRange('kp','kpv',v=>fmt(v,1));bindRange('ki','kiv',v=>fmt(v,2));bindRange('kd','kdv',v=>fmt(v,1));
+function applyProc(){const c=P();$('dist').textContent=c.distName;$('procnote').textContent=c.note;const [kp,ki,kd]=c.presets.pid;$('kp').value=kp;$('ki').value=ki;$('kd').value=kd;['kp','ki','kd','sp'].forEach(id=>$(id).dispatchEvent(new Event('input')));reset()}
+$('proc').addEventListener('change',()=>{proc=$('proc').value;applyProc()});
+document.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>{const [kp,ki,kd]=P().presets[b.dataset.p];$('kp').value=kp;$('ki').value=ki;$('kd').value=kd;['kp','ki','kd'].forEach(id=>$(id).dispatchEvent(new Event('input')));ctrl.i=0}));
+$('dist').addEventListener('click',()=>{dist=P().distTime});
+$('reset').addEventListener('click',reset);
+$('run').addEventListener('click',()=>{loop.toggle();$('run').textContent=loop.running?'Pause':'Run'});
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});loop.speed=+$('speed').value;
+$('ts').addEventListener('change',()=>{ctrl.acc=0});
+applyProc();loop.start();
+</script>
+</body>
+</html>

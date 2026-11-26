@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>FreeRTOS Scheduler Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.tasktbl td{padding:4px 6px}.tasktbl select,.tasktbl input{padding:4px 6px;font-size:13px;width:auto;min-width:58px}
+.tasktbl input[type=number]{width:64px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#gantt{height:250px}
+.objs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+.q{display:flex;gap:3px;margin-top:6px}.q i{flex:1;height:14px;background:#1f2937;border:1px solid #334155;border-radius:3px}.q i.f{background:#38bdf8}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>FreeRTOS Scheduler Visualiser</h1><span class="tag">tasks · queues · semaphores · ISR</span></div></div>
+<main class="wrap">
+<p class="intro">A tick-level model of the task set from my RTOS-based control system: a sensor task feeding a queue, a PID control task blocked on that queue, a comms task woken by a UART interrupt through a semaphore, and a low-priority SD-card logger. Change priorities and execution times and see preemption, deadline misses and CPU load on the timeline, the way they would show up on a logic analyser trace of the real firmware.</p>
+<div class="layout wide">
+ <div class="stack">
+  <div class="panel">
+   <h2>Task set</h2>
+   <div class="tscroll"><table class="tasktbl"><thead><tr><th>Task</th><th>Prio</th><th>Period</th><th>Exec</th></tr></thead><tbody id="ttb"></tbody></table></div>
+   <p class="small muted" style="margin:8px 0 0">Priority 4 is highest (FreeRTOS convention). Period applies to periodic tasks; event-driven tasks are released by the queue or the ISR. Exec is the worst-case CPU time per job in ms.</p>
+  </div>
+  <div class="panel">
+   <h2>Kernel options</h2>
+   <label class="check"><input type="checkbox" id="preempt" checked> configUSE_PREEMPTION (preemptive scheduling)</label>
+   <label class="check"><input type="checkbox" id="slice" checked> configUSE_TIME_SLICING (round-robin at equal priority)</label>
+   <label>UART RX interrupt, mean interval <span class="v" id="isrv"></span></label><input type="range" id="isr" min="5" max="200" step="5" value="40">
+   <div class="btns"><button class="warn" id="overload">Overload: logger takes 60 ms</button><button class="sec" id="defaults">Defaults</button></div>
+  </div>
+  <div class="panel">
+   <h2>Run</h2>
+   <div class="btns"><button id="run">Pause</button><button class="sec" id="stepb">Step 1 tick</button><button class="sec" id="reset">Reset</button></div>
+   <label>Speed (ticks per second)</label><select id="speed"><option value="0.05">50</option><option value="0.2" selected>200</option><option value="1">1000 (real time)</option></select>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Timeline <span class="muted small">(1 ms tick · last 400 ticks · ▲ release · ✖ missed deadline · │ ISR)</span></h2>
+   <canvas class="chart" id="gantt"></canvas>
+   <div class="stats" id="stats"></div>
+  </div>
+  <div class="panel">
+   <h2>Kernel objects</h2>
+   <div class="objs">
+    <div class="stat"><div class="k">Sample queue (len 5)</div><div class="q" id="qv"></div><div class="small muted" id="qinfo"></div></div>
+    <div class="stat"><div class="k">UART binary semaphore</div><div class="n sm" id="semN">—</div><div class="small muted" id="seminfo"></div></div>
+    <div class="stat"><div class="k">Tick count</div><div class="n" id="tickN">0</div></div>
+    <div class="stat"><div class="k">CPU busy (last 1000 ticks)</div><div class="n" id="cpuN">—</div></div>
+   </div>
+  </div>
+  <div class="panel">
+   <h2>Scheduler trace</h2>
+   <div class="console" id="log"></div>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const DEF=()=>[
+ {id:'sensor',name:'SensorTask',prio:3,kind:'periodic',period:10,exec:2,color:'#38bdf8',desc:'reads the ADC every 10 ms, xQueueSend()'},
+ {id:'control',name:'ControlTask',prio:2,kind:'queue',period:0,exec:4,color:'#22c55e',desc:'xQueueReceive() then PID update + PWM'},
+ {id:'comms',name:'CommsTask',prio:4,kind:'sem',period:0,exec:3,color:'#a78bfa',desc:'xSemaphoreTake() given from UART RX ISR'},
+ {id:'logger',name:'LoggerTask',prio:1,kind:'periodic',period:100,exec:20,color:'#f59e0b',desc:'writes a record to the SD card'},
+ {id:'idle',name:'IDLE',prio:0,kind:'idle',period:0,exec:0,color:'#334155',desc:'runs when nothing else is ready'}
+];
+let tasks,tick,queue,sem,semLost,qOverflow,trace,isrMarks,current,nextIsr,ran;
+const log=makeLog($('log'),300);
+const WIN=400;
+function reset(){
+ tasks=DEF();tick=0;queue=0;sem=false;semLost=0;qOverflow=0;trace=[];isrMarks=[];current=null;nextIsr=randIsr();ran=[];
+ for(const k of tasks)Object.assign(k,{state:k.kind==='idle'?'Ready':'Blocked',remaining:0,next:k.kind==='periodic'?0:null,release:0,jobs:0,missed:0,run:0,maxResp:0,lastRun:-1,blockedSince:0});
+ $('log').innerHTML='';log('vTaskStartScheduler() — tick rate 1000 Hz','info',false);buildTable();draw();
+}
+function randIsr(){const m=+$('isr').value;return Math.max(1,Math.round(-Math.log(1-Math.random())*m))}
+function ready(k){return k.remaining>0||k.kind==='idle'}
+function release(k,why){k.remaining=k.exec;k.release=tick;k.state='Ready';if(why)log(`t=${tick} ms: ${k.name} ready (${why})`,'dim',false)}
+function step(){
+ /* 1. timer / ISR events at this tick */
+ if(--nextIsr<=0){nextIsr=randIsr();isrMarks.push(tick);const c=tasks.find(k=>k.kind==='sem');if(sem)semLost++;sem=true;log(`t=${tick} ms: UART RX ISR → xSemaphoreGiveFromISR()`,'info',false);if(c.remaining===0){sem=false;release(c,'semaphore taken')}}
+ for(const k of tasks)if(k.kind==='periodic'&&tick>=k.next){
+  if(k.remaining>0){k.missed++;log(`t=${tick} ms: ${k.name} missed its ${k.period} ms deadline (still has ${k.remaining} ms to run)`,'err',false)}
+  else release(k,null);
+  k.next+=k.period;k.releases=(k.releases||[]);k.releases.push(tick);
+ }
+ const ctl=tasks.find(k=>k.kind==='queue');if(ctl.remaining===0&&queue>0){queue--;release(ctl,'xQueueReceive() returned a sample')}
+ /* 2. pick a task */
+ const readyTasks=tasks.filter(ready);
+ let pick;
+ if(current&&current.remaining>0&&!$('preempt').checked)pick=current;
+ else{
+  const top=Math.max(...readyTasks.map(k=>k.prio));const cands=readyTasks.filter(k=>k.prio===top);
+  if(cands.length===1)pick=cands[0];
+  else if($('slice').checked)pick=cands.sort((a,b)=>a.lastRun-b.lastRun)[0];
+  else pick=(current&&cands.includes(current))?current:cands[0];
+ }
+ if(pick!==current){if(current&&current.remaining>0)current.state='Ready';log(`t=${tick} ms: switch → ${pick.name}${current?' (from '+current.name+')':''}`,pick.kind==='idle'?'dim':'',false);current=pick}
+ pick.state='Running';pick.run++;pick.lastRun=tick;trace.push(tasks.indexOf(pick));if(trace.length>2000)trace.shift();
+ /* 3. run one tick */
+ if(pick.kind!=='idle'){
+  pick.remaining--;
+  if(pick.remaining===0){
+   pick.jobs++;const resp=tick+1-pick.release;if(resp>pick.maxResp)pick.maxResp=resp;pick.state='Blocked';
+   if(pick.kind==='periodic'&&pick.id==='sensor'){if(queue>=5){qOverflow++;log(`t=${tick+1} ms: xQueueSend() failed — queue full (ControlTask starved)`,'warn',false)}else queue++}
+   if(pick.kind==='sem'&&sem){sem=false;release(pick,'semaphore already pending')}
+  }
+ }
+ tick++;
+ if(isrMarks.length>200)isrMarks.shift();
+}
+function buildTable(){
+ $('ttb').innerHTML=tasks.filter(k=>k.kind!=='idle').map((k,i)=>`<tr><td><span class="sw" style="background:${k.color}"></span><b>${k.name}</b><br><span class="muted small">${k.desc}</span></td>
+ <td><select data-i="${i}" data-f="prio">${[4,3,2,1].map(p=>`<option ${p===k.prio?'selected':''}>${p}</option>`).join('')}</select></td>
+ <td>${k.kind==='periodic'?`<input type="number" min="2" max="500" value="${k.period}" data-i="${i}" data-f="period">`:'<span class="muted small">event</span>'}</td>
+ <td><input type="number" min="1" max="200" value="${k.exec}" data-i="${i}" data-f="exec"></td></tr>`).join('');
+ $('ttb').querySelectorAll('[data-f]').forEach(el=>el.addEventListener('change',()=>{const k=tasks[+el.dataset.i],f=el.dataset.f,v=Math.max(1,parseInt(el.value,10)||1);k[f]=v;if(f==='period')k.next=tick+v;log(`t=${tick} ms: ${k.name}.${f} = ${v}`,'warn',false)}));
+}
+const g=$('gantt'),gx=g.getContext('2d');
+function drawGantt(){
+ const r=g.getBoundingClientRect(),dpr=window.devicePixelRatio||1;if(g.width!==Math.round(r.width*dpr)){g.width=Math.round(r.width*dpr);g.height=Math.round(r.height*dpr)}gx.setTransform(dpr,0,0,dpr,0,0);
+ const w=r.width,h=r.height,L=96,rows=tasks.length,rh=(h-22)/rows,t0=Math.max(0,tick-WIN),px=(w-L-8)/WIN;
+ gx.clearRect(0,0,w,h);gx.font='12px system-ui,sans-serif';gx.textBaseline='middle';
+ tasks.forEach((k,i)=>{const y=i*rh+4;gx.fillStyle='#0f172a';gx.fillRect(L,y,w-L-8,rh-4);gx.fillStyle=k.state==='Running'?'#e5e7eb':'#94a3b8';gx.textAlign='right';gx.fillText(k.name,L-8,y+(rh-4)/2);
+  gx.fillStyle=k.color;const start=Math.max(0,trace.length-(tick-t0));
+  for(let j=start;j<trace.length;j++)if(trace[j]===i){const tt=tick-(trace.length-j);gx.fillRect(L+(tt-t0)*px,y+3,Math.max(px,1),rh-10)}
+  if(k.releases)for(const rt of k.releases.slice(-60))if(rt>=t0){gx.fillStyle='#e5e7eb';const x=L+(rt-t0)*px;gx.beginPath();gx.moveTo(x-3,y+rh-4);gx.lineTo(x+3,y+rh-4);gx.lineTo(x,y+rh-9);gx.fill()}
+  if(k.releases&&k.releases.length>80)k.releases=k.releases.slice(-80);
+  if(k.kind==='sem'){gx.strokeStyle='#c4b5fd';for(const it of isrMarks)if(it>=t0){const x=L+(it-t0)*px;gx.beginPath();gx.moveTo(x,y);gx.lineTo(x,y+6);gx.stroke()}}
+ });
+ gx.fillStyle='#64748b';gx.textAlign='center';gx.textBaseline='bottom';for(let i=0;i<=4;i++){const tt=t0+WIN*i/4;gx.fillText(tt+' ms',L+(tt-t0)*px,h-2)}
+}
+function draw(){
+ drawGantt();
+ const busy=trace.slice(-1000).filter(i=>tasks[i].kind!=='idle').length,n=Math.min(1000,trace.length)||1;
+ $('cpuN').textContent=fmt(100*busy/n,0)+' %';$('tickN').textContent=tick;
+ $('qv').innerHTML=Array.from({length:5},(_,i)=>`<i class="${i<queue?'f':''}"></i>`).join('');$('qinfo').textContent=`${queue} waiting · ${qOverflow} send failure(s)`;
+ $('semN').textContent=sem?'GIVEN (pending)':'taken / empty';$('seminfo').textContent=semLost?`${semLost} ISR event(s) lost (task was still busy)`:'no events lost';
+ $('stats').innerHTML=tasks.map(k=>`<div class="stat" style="border-left:3px solid ${k.color}"><div class="k">${k.name}</div><div class="n sm"><span class="badge ${k.state==='Running'?'green':k.state==='Ready'?'amber':''}">${k.state}</span></div><div class="small muted">${k.kind==='idle'?'':`CPU ${fmt(100*trace.slice(-1000).filter(i=>tasks[i]===k).length/n,0)} % · jobs ${k.jobs} · max resp ${k.maxResp} ms${k.kind==='periodic'?' · <span class="'+(k.missed?'err':'ok')+'">missed '+k.missed+'</span>':''}`}</div></div>`).join('');
+}
+const loop=makeLoop(()=>step(),draw,1000);
+bindRange('isr','isrv',v=>v+' ms');
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});loop.speed=+$('speed').value;
+$('run').addEventListener('click',()=>{loop.toggle();$('run').textContent=loop.running?'Pause':'Run'});
+$('stepb').addEventListener('click',()=>{if(loop.running){loop.stop();$('run').textContent='Run'}step();draw()});
+$('reset').addEventListener('click',reset);
+$('overload').addEventListener('click',()=>{const k=tasks.find(k=>k.id==='logger');k.exec=60;k.prio=3;buildTable();log(`t=${tick} ms: LoggerTask now needs 60 ms at priority 3 — watch ControlTask (prio 2) starve and the queue fill`,'warn',false)});
+$('defaults').addEventListener('click',()=>{const d=DEF();tasks.forEach((k,i)=>{k.prio=d[i].prio;k.period=d[i].period;k.exec=d[i].exec});buildTable();log('task parameters restored','warn',false)});
+reset();loop.start();
+</script>
+</body>
+</html>

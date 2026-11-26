@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>RFID Attendance System Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.tags{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.tagb{background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;text-align:left;color:var(--text);font-weight:600}
+.tagb:hover{border-color:var(--accent)}.tagb .id{display:block;font:12px ui-monospace,monospace;color:var(--muted)}
+.tagb .s{float:right;font-size:11px;padding:1px 7px;border-radius:999px;background:#1f2937}.tagb .s.in{background:#052e16;color:#86efac}
+.kp{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-width:220px}
+.kp button{padding:8px 0;background:#1f2937;color:#e5e7eb;border:1px solid var(--line)}
+.ee{font:13px ui-monospace,monospace;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre;overflow:auto}
+.ee b{color:var(--accent)}.ee i{color:var(--muted);font-style:normal}
+.board{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px}.flow span{padding:4px 8px;border-radius:6px;background:#1f2937;border:1px solid var(--line);transition:all .2s}.flow span.on{background:#082f49;border-color:var(--accent);color:#7dd3fc}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>RFID Attendance System · NXP LPC2129 (ARM7)</h1><span class="tag">UART ISR · I²C EEPROM · RTC · HD44780 LCD</span> <a class="back" href="https://github.com/venu-konda/attendence-system-implementation-using-RFID" target="_blank" rel="noopener">GitHub ↗</a></div></div>
+<main class="wrap">
+<p class="intro">Present a tag to the reader and follow the firmware: the UART0 receive interrupt collects the tag ID, it is matched against the known list, the person's IN/OUT state is toggled and written to the external I²C EEPROM (so it survives a reset), the event is shown on the 20×4 LCD with the on-chip RTC time, and a CSV record goes out over UART to the Linux host logger.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>RFID reader · present a tag</h2>
+   <div class="tags" id="tags"></div>
+   <form class="cmdline" id="customf" style="margin-top:10px"><input type="text" id="custom" placeholder="unknown tag, e.g. 7F00112233" maxlength="10"><button class="sec">Scan</button></form>
+  </div>
+  <div class="panel">
+   <h2>Board</h2>
+   <div class="board"><button class="warn" id="reset">Reset / power-cycle</button><button class="sec" id="menu">EINT0 · keypad menu</button></div>
+   <h3>4×4 matrix keypad</h3>
+   <div class="kp" id="kp"></div>
+   <p class="small muted" style="margin:8px 0 0">The menu (external interrupt on P0.16) asks for hour, minute, second, date, month and year. Type two digits, press <b>#</b> to accept, <b>*</b> to cancel.</p>
+  </div>
+  <div class="panel">
+   <h2>I²C EEPROM (24C04) · first 16 bytes</h2>
+   <div class="ee" id="ee"></div>
+   <p class="small muted" style="margin:8px 0 0">One byte per person at 0x00–0x03: 00 = OUT, 01 = IN. Written with a page write after every toggle and read back at boot.</p>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>20×4 character LCD (HD44780, 8-bit mode)</h2>
+   <div class="lcd" id="lcd"></div>
+   <div class="flow" style="margin-top:12px" id="flow"><span>UART0 RX ISR</span>→<span>match tag</span>→<span>toggle state</span>→<span>EEPROM write</span>→<span>RTC read</span>→<span>LCD</span>→<span>UART0 TX CSV</span></div>
+  </div>
+  <div class="split">
+   <div class="panel"><h2>UART0 · 9600 8N1 <span class="muted small">(to PC)</span></h2><div class="console" id="uart"></div></div>
+   <div class="panel"><h2>Linux host logger <span class="muted small">(termios, C)</span></h2><div class="tscroll" style="max-height:220px;overflow:auto"><table><thead><tr><th>Tag</th><th>Name</th><th>Status</th><th>Time</th><th>Date</th></tr></thead><tbody id="rows"></tbody></table></div><div class="btns"><button class="sec" id="dl">Download attendance.csv</button><button class="sec" id="clr">Clear log</button></div></div>
+  </div>
+  <div class="panel"><h2>Firmware trace</h2><div class="console" id="trace"></div></div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const PEOPLE=[{tag:'4B00A1C3F2',name:'VENU'},{tag:'3A00B7D119',name:'RAVI'},{tag:'5C00C4E2A8',name:'PRIYA'},{tag:'1D00F1A09B',name:'ARJUN'}];
+const EE=new Uint8Array(16);let state=[0,0,0,0],lines=['','','',''],rtc=new Date(),rtcOff=0,menu=null,rows=[],busy=false;
+const trace=makeLog($('trace'),200),uart=makeLog($('uart'),200);
+const now=()=>new Date(Date.now()+rtcOff);
+const tstr=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,dstr=d=>`${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+function lcd(){$('lcd').textContent=lines.map(l=>l.padEnd(20).slice(0,20)).join('\n')}
+function setLine(i,s){lines[i]=s;lcd()}
+function eeDraw(){$('ee').innerHTML='addr  '+Array.from({length:16},(_,i)=>hex2(i)).join(' ')+'\n0x00  '+Array.from(EE,(b,i)=>i<4?`<b>${hex2(b)}</b>`:`<i>${hex2(b)}</i>`).join(' ')+'\n\n'+PEOPLE.map((p,i)=>`0x${hex2(i)} ${p.name.padEnd(6)} = ${EE[i]?'IN ':'OUT'}`).join('\n')}
+function tagsDraw(){$('tags').innerHTML=PEOPLE.map((p,i)=>`<button class="tagb" data-t="${p.tag}">${p.name}<span class="s ${state[i]?'in':''}">${state[i]?'IN':'OUT'}</span><span class="id">${p.tag}</span></button>`).join('');$('tags').querySelectorAll('[data-t]').forEach(b=>b.addEventListener('click',()=>scan(b.dataset.t)))}
+function flow(n){$('flow').querySelectorAll('span').forEach((s,i)=>s.classList.toggle('on',i<=n))}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function scan(tag){
+ if(busy||menu)return;busy=true;tag=tag.toUpperCase();
+ trace(`UART0 RX ISR: ${tag.length} bytes received → "${tag}"`,'info');flow(0);await sleep(250);
+ const i=PEOPLE.findIndex(p=>p.tag===tag);flow(1);
+ if(i<0){trace(`no match for ${tag} in known list`,'err');setLine(2,'UNKNOWN TAG');setLine(3,tag);uart(`${tag},UNKNOWN,DENIED,${tstr(now())},${dstr(now())}`,'warn',false);await sleep(600);flow(-1);busy=false;return}
+ await sleep(250);state[i]^=1;trace(`match: ${PEOPLE[i].name} → state ${state[i]?'IN':'OUT'}`,'ok');flow(2);await sleep(250);
+ EE[i]=state[i];eeDraw();trace(`I2C: EEPROM page write addr 0x${hex2(i)} = ${hex2(state[i])} (ack, 5 ms write cycle)`,'');flow(3);await sleep(300);
+ const d=now();trace(`RTC: ${tstr(d)} ${dstr(d)}`,'dim');flow(4);await sleep(200);
+ setLine(2,`${PEOPLE[i].name.padEnd(8)}${state[i]?'IN ':'OUT'}`);setLine(3,tag);flow(5);await sleep(200);
+ const csv=`${tag},${PEOPLE[i].name},${state[i]?'IN':'OUT'},${tstr(d)},${dstr(d)}`;uart(csv,'ok',false);rows.push(csv.split(','));rowsDraw();flow(6);tagsDraw();
+ await sleep(500);flow(-1);busy=false;
+}
+function rowsDraw(){$('rows').innerHTML=rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('');const t=$('rows').parentElement.parentElement;t.scrollTop=t.scrollHeight}
+async function boot(){
+ busy=true;lines=['','','',''];lcd();trace('RESET: Startup.s → main()','warn');await sleep(300);
+ setLine(0,'RFID ATTENDANCE SYS');trace('LCD init (8-bit, 2 lines ×2), UART0 9600 baud, RX interrupt enabled (VIC slot 0)','dim');await sleep(300);
+ trace('I2C: reading EEPROM 0x00–0x03','dim');await sleep(300);state=Array.from(EE.slice(0,4));tagsDraw();trace(`EEPROM restored: ${PEOPLE.map((p,i)=>p.name+'='+(state[i]?'IN':'OUT')).join(' ')}`,'ok');
+ trace('RTC: CCR enabled, 32.768 kHz','dim');setLine(3,'SCAN TAG...');busy=false;
+}
+/* keypad menu */
+const KEYS=['1','2','3','A','4','5','6','B','7','8','9','C','*','0','#','D'];
+$('kp').innerHTML=KEYS.map(k=>`<button data-k="${k}">${k}</button>`).join('');
+$('kp').querySelectorAll('[data-k]').forEach(b=>b.addEventListener('click',()=>key(b.dataset.k)));
+const FIELDS=[['SET HOUR',0,23],['SET MINUTE',0,59],['SET SECOND',0,59],['SET DATE',1,31],['SET MONTH',1,12],['SET YEAR (YY)',0,99]];
+$('menu').addEventListener('click',()=>{if(busy)return;menu={f:0,buf:'',vals:[]};trace('EINT0 interrupt: keypad menu entered','warn');showMenu()});
+function showMenu(){const [name]=FIELDS[menu.f];setLine(1,name);setLine(2,'> '+menu.buf.padEnd(2,'_'));setLine(3,'#=OK  *=CANCEL')}
+function key(k){
+ if(!menu){trace(`keypad: '${k}' ignored (not in menu)`,'dim');return}
+ if(k==='*'){menu=null;trace('menu cancelled','warn');setLine(1,tstr(now())+' '+dstr(now()).slice(0,8));setLine(2,'');setLine(3,'SCAN TAG...');return}
+ if(/\d/.test(k)&&menu.buf.length<2){menu.buf+=k;showMenu();return}
+ if(k==='#'){const [name,lo,hi]=FIELDS[menu.f],v=parseInt(menu.buf||'0',10);if(v<lo||v>hi){setLine(3,'INVALID, RETRY');menu.buf='';return}
+  menu.vals.push(v);menu.f++;menu.buf='';
+  if(menu.f>=FIELDS.length){const [h,m,s,D,M,Y]=menu.vals,d=new Date(2000+Y,M-1,D,h,m,s);rtcOff=d-Date.now();trace(`RTC set: ${tstr(d)} ${dstr(d)} (HOUR/MIN/SEC/DOM/MONTH/YEAR registers written)`,'ok');menu=null;setLine(2,'TIME UPDATED');setLine(3,'SCAN TAG...');return}
+  showMenu()}
+}
+$('customf').addEventListener('submit',e=>{e.preventDefault();const v=$('custom').value.trim();if(/^[0-9A-Fa-f]{10}$/.test(v))scan(v);else trace('reader sends 10 hex characters per tag','err');$('custom').value=''});
+$('reset').addEventListener('click',boot);
+$('dl').addEventListener('click',()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['TAG,NAME,STATUS,TIME,DATE\n'+rows.map(r=>r.join(',')).join('\n')+'\n'],{type:'text/csv'}));a.download='attendance.csv';a.click()});
+$('clr').addEventListener('click',()=>{rows=[];rowsDraw()});
+setInterval(()=>{if(!menu&&!busy){const d=now();setLine(1,`${tstr(d)} ${dstr(d).slice(0,6)}${String(d.getFullYear()).slice(2)}`)}},1000);
+eeDraw();tagsDraw();boot();
+</script>
+</body>
+</html>

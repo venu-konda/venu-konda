@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>LoRa Sensor Node Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.link{position:relative;height:90px;background:var(--ink);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:10px}
+.node,.gw{position:absolute;top:18px;width:54px;text-align:center;font-size:11px;color:var(--muted)}
+.node{left:14px}.gw{right:14px}
+.node b,.gw b{display:block;width:40px;height:40px;margin:0 auto 4px;border-radius:10px;background:#1f2937;border:1px solid var(--line);line-height:40px;font-size:18px}
+.pkt{position:absolute;top:34px;left:60px;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);opacity:0;transition:left .9s linear,opacity .2s}
+.pkt.lost{background:var(--red);box-shadow:0 0 10px var(--red)}
+.ph{display:flex;flex-wrap:wrap;gap:4px;font:12px ui-monospace,monospace}.ph span{padding:3px 6px;border-radius:5px;background:#1f2937;border:1px solid var(--line)}.ph span i{display:block;font-style:normal;color:var(--muted);font-size:10px}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>IoT Sensor Node with LoRa</h1><span class="tag">ESP32 · SX1276 · 865–867 MHz (IN865)</span></div></div>
+<main class="wrap">
+<p class="intro">A battery-powered ESP32 node that wakes from deep sleep, reads a sensor, frames a packet with a CRC-16 and transmits it over LoRa to a gateway. The simulator computes LoRa time-on-air from the spreading factor and bandwidth, a log-distance path-loss model gives RSSI and SNR at the gateway, and the receiver sensitivity decides whether each packet gets through. Energy per cycle gives the battery-life estimate.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Radio (SX1276)</h2>
+   <label>Spreading factor <span class="v" id="sfv"></span></label><input type="range" id="sf" min="7" max="12" value="9">
+   <label>Bandwidth</label><select id="bw"><option value="125000" selected>125 kHz</option><option value="250000">250 kHz</option><option value="500000">500 kHz</option></select>
+   <label>Coding rate</label><select id="cr"><option value="1" selected>4/5</option><option value="2">4/6</option><option value="3">4/7</option><option value="4">4/8</option></select>
+   <label>TX power <span class="v" id="pwv"></span></label><input type="range" id="pw" min="2" max="20" value="14">
+  </div>
+  <div class="panel">
+   <h2>Link</h2>
+   <label>Distance to gateway <span class="v" id="dv"></span></label><input type="range" id="d" min="50" max="12000" step="50" value="2000">
+   <label>Environment (path-loss exponent)</label><select id="env"><option value="2.0">Open field / line of sight (n = 2.0)</option><option value="2.7" selected>Suburban (n = 2.7)</option><option value="3.3">Dense urban / indoor (n = 3.3)</option></select>
+   <label>Shadowing σ <span class="v" id="shv"></span></label><input type="range" id="sh" min="0" max="8" step="0.5" value="3">
+  </div>
+  <div class="panel">
+   <h2>Node</h2>
+   <label>Report interval <span class="v" id="ivv"></span></label><input type="range" id="iv" min="10" max="900" step="10" value="60">
+   <label>Battery capacity <span class="v" id="batv"></span></label><input type="range" id="bat" min="500" max="5000" step="100" value="2000">
+   <div class="btns"><button id="run">Pause</button><button class="sec" id="reset">Reset counters</button></div>
+   <label>Simulation speed</label><select id="speed"><option value="1">1×</option><option value="10" selected>10×</option><option value="60">60×</option></select>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Link budget</h2>
+   <div class="link"><div class="node"><b>📡</b>node</div><div class="pkt" id="pkt"></div><div class="gw"><b>🛰</b>gateway</div></div>
+   <div class="stats">
+    <div class="stat"><div class="k">Time on air</div><div class="n" id="toaN">—</div></div>
+    <div class="stat"><div class="k">Path loss</div><div class="n" id="plN">—</div></div>
+    <div class="stat"><div class="k">Expected RSSI</div><div class="n" id="rssiN">—</div></div>
+    <div class="stat"><div class="k">Receiver sensitivity</div><div class="n" id="sensN">—</div></div>
+    <div class="stat"><div class="k">Link margin</div><div class="n" id="margN">—</div></div>
+    <div class="stat"><div class="k">Bit rate</div><div class="n" id="brN">—</div></div>
+   </div>
+  </div>
+  <div class="panel">
+   <h2>Packets · RSSI at gateway</h2>
+   <canvas class="chart" id="c1" style="height:220px"></canvas>
+   <div class="stats">
+    <div class="stat"><div class="k">Sent / received</div><div class="n" id="cntN">0 / 0</div></div>
+    <div class="stat"><div class="k">Packet delivery</div><div class="n" id="pdrN">—</div></div>
+    <div class="stat"><div class="k">Last SNR</div><div class="n" id="snrN">—</div></div>
+    <div class="stat"><div class="k">Airtime duty cycle</div><div class="n" id="dcN">—</div></div>
+   </div>
+  </div>
+  <div class="panel">
+   <h2>Last packet <span class="muted small">(17 bytes: header + payload + CRC-16/CCITT)</span></h2>
+   <div class="ph" id="ph"></div>
+   <div class="stats">
+    <div class="stat"><div class="k">Charge per cycle</div><div class="n sm" id="qN">—</div></div>
+    <div class="stat"><div class="k">Average current</div><div class="n sm" id="iavgN">—</div></div>
+    <div class="stat"><div class="k">Estimated battery life</div><div class="n" id="lifeN">—</div></div>
+    <div class="stat"><div class="k">Battery remaining</div><div class="n" id="remN">—</div></div>
+   </div>
+  </div>
+  <div class="panel"><h2>Gateway log</h2><div class="console" id="log"></div></div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const SNR_LIM={7:-7.5,8:-10,9:-12.5,10:-15,11:-17.5,12:-20};
+const F=866e6,C=3e8;
+function toa(sf,bw,cr,pl){const de=(bw===125000&&sf>=11)?1:0,ts=Math.pow(2,sf)/bw,tpre=(8+4.25)*ts;const n=8+Math.max(Math.ceil((8*pl-4*sf+28+16-20*0)/(4*(sf-2*de)))*(cr+4),0);return tpre+n*ts}
+function crc16(b){let c=0xFFFF;for(const x of b){c^=x<<8;for(let i=0;i<8;i++)c=c&0x8000?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c}
+let seq=0,sent=0,recv=0,simT=0,nextTx=0,temp=27.5,hum=60,used=0,airtime=0,lastSnr=null;
+const log=makeLog($('log'),200);
+const chart=new Chart($('c1'),{window:40,yMin:-150,yMax:-40,xLabel:'',yLabel:'dBm',series:[{name:'RSSI',color:'#38bdf8'},{name:'sensitivity',color:'#ef4444',dash:[5,4],width:1},{name:'lost',color:'#ef4444'}]});
+function link(){
+ const sf=+$('sf').value,bw=+$('bw').value,cr=+$('cr').value,pw=+$('pw').value,d=+$('d').value,n=+$('env').value;
+ const pl=20*Math.log10(4*Math.PI*1*F/C)+10*n*Math.log10(d);
+ const sens=-174+10*Math.log10(bw)+6+SNR_LIM[sf];
+ const rssi=pw+2+2-pl;  /* 2 dBi antennas */
+ const t=toa(sf,bw,cr,17),br=sf*bw/Math.pow(2,sf)*4/(4+cr);
+ return{sf,bw,cr,pw,d,n,pl,sens,rssi,toa:t,br,margin:rssi-sens};
+}
+function energy(L){const iv=+$('iv').value;/* mA·s per cycle: TX 120 mA during airtime + sensor 20 mA for 50 ms + ESP32 wake/radio setup 45 mA for 300 ms + deep sleep 10 µA for the rest */const q=120*L.toa+20*0.05+45*0.3+0.010*Math.max(0,iv-L.toa-0.35);return{q,iavg:q/iv}}
+function tx(){
+ const L=link();seq=(seq+1)&0xFFFF;sent++;
+ temp+=(Math.random()-0.5)*0.4;hum=clamp(hum+(Math.random()-0.5)*1,20,95);
+ const batPct=Math.max(0,100-100*used/(+$('bat').value*3600));
+ const t10=Math.round(temp*10),h10=Math.round(hum*10);
+ const body=[0xA5,0x01,0x2C,seq>>8,seq&255,(t10>>8)&255,t10&255,(h10>>8)&255,h10&255,Math.round(batPct*2.55),L.sf,0x00,0x00,0x00,0x00];
+ const c=crc16(body);const pkt=[...body,c>>8,c&255];
+ $('ph').innerHTML=[['A5','sync'],['01','ver'],['2C','node id'],[hex2(seq>>8)+' '+hex2(seq&255),'seq'],[hex2(t10>>8)+' '+hex2(t10&255),'temp×10'],[hex2(h10>>8)+' '+hex2(h10&255),'hum×10'],[hex2(Math.round(batPct*2.55)),'batt'],[hex2(L.sf),'sf'],['00 00 00 00','reserved'],[hex2(c>>8)+' '+hex2(c&255),'crc16']].map(([v,k])=>`<span>${v}<i>${k}</i></span>`).join('');
+ const rssi=L.rssi+(Math.random()*2-1)*(+$('sh').value)*1.4,snr=rssi-(-174+10*Math.log10(L.bw)+6),ok=rssi>L.sens;
+ const e=energy(L);used+=e.q;airtime+=L.toa;
+ const p=$('pkt');p.className='pkt'+(ok?'':' lost');p.style.transition='none';p.style.left='60px';p.style.opacity='1';requestAnimationFrame(()=>{p.style.transition='left .9s linear,opacity .2s';p.style.left=ok?'calc(100% - 70px)':'55%';setTimeout(()=>p.style.opacity='0',900)});
+ if(ok){recv++;lastSnr=snr;log(`rx seq=${seq} rssi=${fmt(rssi,1)} dBm snr=${fmt(snr,1)} dB toa=${fmt(L.toa*1000,0)} ms  T=${fmt(temp,1)}°C RH=${fmt(hum,0)}% batt=${fmt(batPct,0)}% crc ok`,'ok',false)}
+ else log(`-- seq=${seq} lost: rssi ${fmt(rssi,1)} dBm below sensitivity ${fmt(L.sens,1)} dBm`,'err',false);
+ chart.push(sent,[ok?rssi:null,L.sens,ok?null:rssi]);
+}
+function step(dt){simT+=dt;if(simT>=nextTx){nextTx=simT+(+$('iv').value);tx()}}
+function draw(){
+ const L=link(),e=energy(L),iv=+$('iv').value,bat=+$('bat').value;
+ $('toaN').textContent=fmt(L.toa*1000,0)+' ms';$('plN').textContent=fmt(L.pl,1)+' dB';$('rssiN').textContent=fmt(L.rssi,1)+' dBm';$('sensN').textContent=fmt(L.sens,1)+' dBm';
+ $('margN').textContent=fmt(L.margin,1)+' dB';$('margN').className='n '+(L.margin>10?'':L.margin>0?'':'');$('margN').style.color=L.margin>10?'#22c55e':L.margin>0?'#f59e0b':'#ef4444';
+ $('brN').textContent=L.br>1000?fmt(L.br/1000,2)+' kbit/s':fmt(L.br,0)+' bit/s';
+ $('cntN').textContent=`${sent} / ${recv}`;$('pdrN').textContent=sent?fmt(100*recv/sent,0)+' %':'—';$('snrN').textContent=lastSnr===null?'—':fmt(lastSnr,1)+' dB';$('dcN').textContent=fmt(100*L.toa/iv,2)+' %';
+ $('qN').textContent=fmt(e.q,1)+' mA·s';$('iavgN').textContent=e.iavg<1?fmt(e.iavg*1000,0)+' µA':fmt(e.iavg,2)+' mA';const days=bat*3600/e.q*iv/86400;$('lifeN').textContent=days>365?fmt(days/365,1)+' years':fmt(days,0)+' days';
+ $('remN').textContent=fmt(Math.max(0,100-100*used/(bat*3600)),2)+' %';
+ chart.draw();
+}
+['sf','pw','d','sh','iv','bat'].forEach(id=>{const f={sf:v=>'SF'+v,pw:v=>v+' dBm',d:v=>v>=1000?fmt(v/1000,2)+' km':v+' m',sh:v=>fmt(v,1)+' dB',iv:v=>v>=60?fmt(v/60,1)+' min':v+' s',bat:v=>v+' mAh'}[id];bindRange(id,id+'v',f)});
+const loop=makeLoop(step,draw,10);loop.speed=+$('speed').value;
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});
+$('run').addEventListener('click',()=>{loop.toggle();$('run').textContent=loop.running?'Pause':'Run'});
+$('reset').addEventListener('click',()=>{sent=recv=0;used=0;airtime=0;chart.clear();lastSnr=null;$('log').innerHTML=''});
+nextTx=2;draw();loop.start();
+</script>
+</body>
+</html>

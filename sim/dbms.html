@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Client–Server Student DBMS Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.net{position:relative;height:110px;background:var(--ink);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.box{position:absolute;top:22px;width:120px;padding:8px;border-radius:10px;background:#1f2937;border:1px solid var(--line);text-align:center;font-size:12px}
+.box b{display:block;font-size:13px}.box.cl{left:12px}.box.sv{right:12px}
+.box .st{color:var(--muted);font-size:11px}
+.wire{position:absolute;left:140px;right:140px;top:50%;height:2px;background:#334155}
+.pk{position:absolute;top:calc(50% - 11px);left:140px;padding:3px 8px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font:700 11px ui-monospace,monospace;opacity:0;white-space:nowrap;transition:left .7s linear,opacity .15s}
+.pk.resp{background:#22c55e;color:#052e16}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>Client–Server Student DBMS</h1><span class="tag">Linux · TCP/IP sockets · C</span></div></div>
+<main class="wrap">
+<p class="intro">A TCP server holding a student table and a command-line client talking to it over a socket, as in my Linux system-programming project. Type commands in the client; each one becomes a request line on the wire, the server parses it, touches the table and sends a response back. The socket calls on both sides are logged in order.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Client <span class="muted small" id="cst">(not connected)</span></h2>
+   <div class="terminal" id="ct"></div>
+   <form class="cmdline" id="cf"><input type="text" id="ci" placeholder="connect · add 104 Kiran CSE 81 · get 101 · list · update 101 92 · del 103 · quit" autocomplete="off"><button>Send</button></form>
+   <div class="btns" id="quick"></div>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <h2>Network · TCP 127.0.0.1:5000</h2>
+   <div class="net"><div class="box cl"><b>client</b><span class="st" id="cs">fd —</span></div><div class="wire"></div><div class="pk" id="pk"></div><div class="box sv"><b>server</b><span class="st" id="ss">listening</span></div></div>
+   <div class="note">Protocol: one request per line, fields separated by <code>|</code>. <code>ADD|id|name|branch|marks</code> → <code>OK|added</code>, <code>GET|id</code> → <code>OK|id|name|branch|marks</code>, errors come back as <code>ERR|reason</code>.</div>
+  </div>
+  <div class="split">
+   <div class="panel"><h2>Server · students table</h2><div class="tscroll"><table><thead><tr><th>id</th><th>name</th><th>branch</th><th>marks</th></tr></thead><tbody id="tbl"></tbody></table></div></div>
+   <div class="panel"><h2>Server log</h2><div class="console" id="sl" style="height:260px"></div></div>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+let db=[{id:101,name:'Venu',branch:'EEE',marks:91},{id:102,name:'Ravi',branch:'ECE',marks:84},{id:103,name:'Priya',branch:'CSE',marks:88}];
+let connected=false,busy=false,cfd=null,reqs=0;
+const sl=makeLog($('sl'),200);
+const ct=(s,c)=>{const d=document.createElement('div');if(c)d.className=c;d.textContent=s;$('ct').appendChild(d);$('ct').scrollTop=1e9};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function tbl(){$('tbl').innerHTML=db.map(r=>`<tr><td>${r.id}</td><td>${r.name}</td><td>${r.branch}</td><td>${r.marks}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">empty</td></tr>'}
+function serve(line){
+ const f=line.split('|'),c=f[0];
+ if(c==='ADD'){const id=+f[1];if(!id||!f[2]||f[4]===undefined)return'ERR|usage ADD|id|name|branch|marks';if(db.some(r=>r.id===id))return'ERR|duplicate id';db.push({id,name:f[2],branch:f[3],marks:+f[4]});return'OK|added'}
+ if(c==='GET'){const r=db.find(r=>r.id===+f[1]);return r?`OK|${r.id}|${r.name}|${r.branch}|${r.marks}`:'ERR|not found'}
+ if(c==='DEL'){const i=db.findIndex(r=>r.id===+f[1]);if(i<0)return'ERR|not found';db.splice(i,1);return'OK|deleted'}
+ if(c==='UPD'){const r=db.find(r=>r.id===+f[1]);if(!r)return'ERR|not found';r.marks=+f[2];return'OK|updated'}
+ if(c==='LIST')return'OK|'+db.length+'|'+db.map(r=>`${r.id},${r.name},${r.branch},${r.marks}`).join(';');
+ return'ERR|unknown command';
+}
+async function fly(text,resp){const p=$('pk');p.textContent=text.length>26?text.slice(0,24)+'…':text;p.className='pk'+(resp?' resp':'');p.style.transition='none';p.style.left=resp?'calc(100% - 140px - '+Math.min(220,text.length*7+16)+'px)':'140px';p.style.opacity='1';await sleep(20);p.style.transition='left .7s linear,opacity .15s';p.style.left=resp?'140px':'calc(100% - 140px - '+Math.min(220,text.length*7+16)+'px)';await sleep(720);p.style.opacity='0'}
+async function connect(){
+ if(connected)return ct('already connected','dim');busy=true;
+ ct('$ ./client 127.0.0.1 5000','hi');ct('socket(AF_INET, SOCK_STREAM, 0) = 3','dim');ct('connect(3, 127.0.0.1:5000) ...','dim');
+ await fly('SYN');sl('accept(3, ...) = 4   ← client 127.0.0.1:'+(40000+Math.floor(Math.random()*20000)),'ok');await fly('SYN-ACK',true);
+ cfd=4;connected=true;ct('connected (fd 3)','p');$('cst').textContent='(connected, fd 3)';$('cs').textContent='fd 3 · ESTABLISHED';$('ss').textContent='client fd 4';busy=false;
+}
+async function request(line){
+ if(!connected)return ct('not connected — type "connect"','err');busy=true;
+ ct(`send(3, "${line}\\n", ${line.length+1})`,'dim');await fly(line);
+ sl(`recv(4) = ${line.length+1} B  "${line}"`,'info');await sleep(150);
+ const r=serve(line);tbl();sl(`send(4) ← "${r}"`,r.startsWith('OK')?'ok':'err');await fly(r,true);
+ ct(`recv(3) = ${r.length+1} B`,'dim');
+ if(r.startsWith('OK|')&&line==='LIST'){const [,n,rows]=r.split('|');ct(`${n} record(s):`,'p');rows.split(';').filter(Boolean).forEach(x=>ct('  '+x.replace(/,/g,'  ')))}
+ else ct(r.replace(/\|/g,'  '),r.startsWith('OK')?'p':'err');
+ reqs++;busy=false;
+}
+async function quit(){if(!connected)return;busy=true;ct('close(3)','dim');await fly('FIN');sl('recv(4) = 0 → client closed, close(4)','warn');connected=false;cfd=null;$('cst').textContent='(not connected)';$('cs').textContent='fd —';$('ss').textContent='listening';busy=false}
+function handle(text){
+ const a=text.trim().split(/\s+/),c=a[0]?.toLowerCase();if(!c)return;ct('> '+text,'hi');
+ if(busy)return ct('busy — wait for the previous request','err');
+ if(c==='connect')return connect();
+ if(c==='quit'||c==='exit')return quit();
+ if(c==='help')return ct('connect | add <id> <name> <branch> <marks> | get <id> | update <id> <marks> | del <id> | list | quit');
+ const M={add:()=>`ADD|${a[1]}|${a[2]}|${a[3]}|${a[4]}`,get:()=>`GET|${a[1]}`,del:()=>`DEL|${a[1]}`,update:()=>`UPD|${a[1]}|${a[2]}`,list:()=>'LIST'};
+ if(M[c])return request(M[c]());ct('unknown command, try "help"','err');
+}
+$('cf').addEventListener('submit',e=>{e.preventDefault();handle($('ci').value);$('ci').value=''});
+$('quick').innerHTML=['connect','list','get 101','add 104 Kiran CSE 81','update 102 90','del 103','quit'].map(q=>`<button class="sec" data-q="${q}">${q}</button>`).join('');
+$('quick').querySelectorAll('[data-q]').forEach(b=>b.addEventListener('click',()=>handle(b.dataset.q)));
+sl('socket(AF_INET, SOCK_STREAM, 0) = 3','dim');sl('setsockopt(SO_REUSEADDR), bind(0.0.0.0:5000), listen(3, 5)','dim');sl('waiting in accept() ...','ok');
+ct('Student DBMS client. Type "connect" to open the TCP connection, then "help".','dim');tbl();
+</script>
+</body>
+</html>

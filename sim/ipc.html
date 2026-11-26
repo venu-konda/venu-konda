@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Full-Duplex FIFO IPC Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.procs{display:grid;grid-template-columns:minmax(0,1fr) 150px minmax(0,1fr);gap:12px;align-items:stretch}
+@media(max-width:800px){.procs{grid-template-columns:minmax(0,1fr)}}
+.pipes{display:flex;flex-direction:column;justify-content:center;gap:40px}
+.pipe{position:relative;height:26px;background:var(--ink);border:1px solid var(--line);border-radius:999px}
+.pipe small{position:absolute;left:0;right:0;top:-18px;text-align:center;color:var(--muted);font-size:11px;white-space:nowrap}
+.pipe i{position:absolute;top:5px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);opacity:0;transition:left .8s linear,opacity .2s}
+.pipe.rtl i{background:#22c55e;box-shadow:0 0 8px #22c55e}
+.pst{font-size:12px;color:var(--muted)}
+.proc .terminal{min-height:200px;max-height:260px}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>Full-Duplex IPC with Named Pipes</h1><span class="tag">Linux · mkfifo · open / read / write</span></div></div>
+<main class="wrap">
+<p class="intro">Two independent processes chatting through a pair of FIFOs (named pipes), one for each direction. Start both and watch the <code>open()</code> calls rendezvous, then type messages: <code>write()</code> on one side wakes the blocked <code>read()</code> on the other. Kill a process to see the peer get end-of-file.</p>
+<div class="procs">
+ <div class="panel proc"><h2>Process A <span class="badge" id="sa">not started</span></h2><div class="terminal" id="ta"></div><form class="cmdline" data-p="a"><input type="text" placeholder="message from A"><button>write()</button></form><div class="btns"><button class="ok" data-start="a">Start A</button><button class="danger" data-kill="a">Kill A</button></div></div>
+ <div class="pipes">
+  <div class="pipe" id="pab"><small>/tmp/fifo_ab (A → B)</small><i></i></div>
+  <div class="pipe rtl" id="pba"><small>/tmp/fifo_ba (B → A)</small><i></i></div>
+ </div>
+ <div class="panel proc"><h2>Process B <span class="badge" id="sb">not started</span></h2><div class="terminal" id="tb"></div><form class="cmdline" data-p="b"><input type="text" placeholder="message from B"><button>write()</button></form><div class="btns"><button class="ok" data-start="b">Start B</button><button class="danger" data-kill="b">Kill B</button></div></div>
+</div>
+<div class="panel" style="margin-top:14px"><h2>Kernel view</h2><div class="kv"><b>/tmp/fifo_ab</b><span id="kab">does not exist</span><b>/tmp/fifo_ba</b><span id="kba">does not exist</span><b>Rule</b><span>open() on a FIFO blocks until the other end is opened too; read() blocks until data arrives and returns 0 at end-of-file when all writers have closed; write() with no reader raises SIGPIPE.</span></div></div>
+</main>
+<script src="sim.js"></script>
+<script>
+/* Process A: open(fifo_ab, O_WRONLY) then open(fifo_ba, O_RDONLY).  Process B: open(fifo_ab, O_RDONLY) then open(fifo_ba, O_WRONLY).
+   Each open() on a FIFO completes only when the opposite end has been opened by the other process, so the two processes
+   rendezvous at stage 1 and again at stage 2, exactly as on Linux. */
+const P={a:{name:'A',t:'ta',st:'sa',out:'ab',inn:'ba',order:[['ab','O_WRONLY','w'],['ba','O_RDONLY','r']]},
+         b:{name:'B',t:'tb',st:'sb',out:'ba',inn:'ab',order:[['ab','O_RDONLY','r'],['ba','O_WRONLY','w']]}};
+const fifo={ab:{exists:false,w:null,r:null},ba:{exists:false,w:null,r:null}};
+const state={a:'off',b:'off'};const STAGE={open1:0,open2:1,run:2};
+const peer=p=>p==='a'?'b':'a';
+const T=(p,s,c)=>{const d=document.createElement('div');if(c)d.className=c;d.textContent=s;const t=$(P[p].t);t.appendChild(d);t.scrollTop=1e9};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function badge(p){const s=state[p],me=P[p];const txt={off:'not started',open1:`blocked in open(fifo_ab, ${me.order[0][1]})`,open2:`blocked in open(fifo_ba, ${me.order[1][1]})`,run:'running · read() blocked',dead:'exited'}[s];$(me.st).textContent=txt;$(me.st).className='badge '+(s==='run'?'green':s==='dead'?'red':s==='off'?'':'amber')}
+function kview(){for(const k of ['ab','ba']){const f=fifo[k];$('k'+k).textContent=f.exists?`FIFO · writer: ${f.w||'none'} · reader: ${f.r||'none'}`:'does not exist'}}
+const peerReached=(p,stage)=>{const i=STAGE[state[peer(p)]];return i!==undefined&&i>=stage};
+async function start(p){
+ if(state[p]!=='off'&&state[p]!=='dead')return;const me=P[p];$(me.t).innerHTML='';
+ T(p,`$ ./proc_${p}`,'hi');
+ for(const k of ['ab','ba']){if(!fifo[k].exists){fifo[k].exists=true;T(p,`mkfifo("/tmp/fifo_${k}", 0666) = 0`,'dim')}else T(p,`mkfifo("/tmp/fifo_${k}") → EEXIST (already there, fine)`,'dim')}
+ for(let s=0;s<2;s++){
+  const [f,mode,end]=me.order[s],fd=3+s;state[p]=s?'open2':'open1';badge(p);
+  fifo[f][end]=me.name+' (opening)';kview();
+  T(p,`open("/tmp/fifo_${f}", ${mode}) ... blocks until the other process opens the ${end==='w'?'read':'write'} end`,'dim');
+  while(!peerReached(p,s)){await sleep(100);if(state[p]==='dead')return}
+  fifo[f][end]=me.name;kview();T(p,`open(fifo_${f}, ${mode}) = ${fd}`,'p');await sleep(150);
+ }
+ state[p]='run';badge(p);T(p,`pthread_create(reader) → read(${me.order[0][2]==='r'?3:4}, buf, 256) blocking; main thread waits for your input`,'dim');
+}
+async function send(p,msg){
+ const me=P[p],q=peer(p);if(state[p]!=='run')return T(p,'process not running','err');
+ const wfd=me.order[0][2]==='w'?3:4,rfd=P[q].order[0][2]==='r'?3:4;
+ if(state[q]!=='run'){T(p,`write(${wfd}, ...) → SIGPIPE: no reader on fifo_${me.out}, process terminated`,'err');die(p,true);return}
+ T(p,`write(${wfd}, "${msg}", ${msg.length}) = ${msg.length}`,'p');
+ const pipe=$('p'+me.out),dot=pipe.querySelector('i');dot.style.transition='none';dot.style.left=p==='a'?'4px':'calc(100% - 18px)';dot.style.opacity='1';await sleep(20);dot.style.transition='left .8s linear,opacity .2s';dot.style.left=p==='a'?'calc(100% - 18px)':'4px';await sleep(820);dot.style.opacity='0';
+ T(q,`read(${rfd}) = ${msg.length}: "${msg}"`,'hi');T(q,`read(${rfd}, buf, 256) blocking again`,'dim');
+}
+function die(p,crashed){
+ const me=P[p],q=peer(p);if(state[p]==='off'||state[p]==='dead')return;
+ if(!crashed)T(p,'SIGTERM → close(3); close(4); exit(0)','err');
+ state[p]='dead';badge(p);
+ if(fifo[me.out].w&&fifo[me.out].w.startsWith(me.name))fifo[me.out].w=null;if(fifo[me.inn].r&&fifo[me.inn].r.startsWith(me.name))fifo[me.inn].r=null;kview();
+ if(state[q]==='run'){const rfd=P[q].order[0][2]==='r'?3:4;T(q,`read(${rfd}) = 0 → EOF: the writer of fifo_${me.out} closed. close(3); close(4); exit(0)`,'err');state[q]='dead';badge(q);fifo[P[q].out].w=null;fifo[P[q].inn].r=null;kview()}
+ /* a peer still blocked in open() simply keeps waiting, as on Linux */
+}
+document.querySelectorAll('[data-start]').forEach(b=>b.addEventListener('click',()=>start(b.dataset.start)));
+document.querySelectorAll('[data-kill]').forEach(b=>b.addEventListener('click',()=>die(b.dataset.kill,false)));
+document.querySelectorAll('form[data-p]').forEach(f=>f.addEventListener('submit',e=>{e.preventDefault();const i=f.querySelector('input');if(i.value.trim())send(f.dataset.p,i.value.trim());i.value=''}));
+badge('a');badge('b');kview();
+T('a','Press "Start A". Its open(fifo_ab, O_WRONLY) will block until B opens the read end.','dim');T('b','Press "Start B". It opens fifo_ab for reading first, then fifo_ba for writing.','dim');
+</script>
+</body>
+</html>

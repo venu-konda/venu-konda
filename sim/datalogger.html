@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>Industrial Data Logger Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.card{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:8px;background:#1f2937;border:1px solid var(--line);font-weight:700}
+.card.out{background:#450a0a;border-color:#991b1b;color:#fca5a5}
+.buf{display:flex;gap:2px;margin-top:6px}.buf i{flex:1;height:10px;background:#1f2937;border-radius:2px}.buf i.f{background:var(--accent)}
+.dir{font:13px ui-monospace,monospace;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;white-space:pre;overflow:auto;max-height:180px}
+.dir b{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>Industrial Data Logger · SD card / FAT32</h1><span class="tag">STM32 · SPI · FatFs · RTC · PT100 · 4–20 mA</span></div></div>
+<main class="wrap">
+<p class="intro">A logger that samples an RTD temperature input and a 4–20 mA pressure transmitter on a fixed interval, time-stamps each record from the RTC and appends CSV lines to a daily file on an SD card through FatFs. Records are collected in a 512-byte sector buffer and written with <code>f_write</code> + <code>f_sync</code>, so pulling the card shows what gets lost and what survives.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Acquisition</h2>
+   <label>Sample interval</label><select id="iv"><option value="1" selected>1 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="60">60 s</option></select>
+   <label>Sync policy</label><select id="sync"><option value="sector" selected>f_sync when the 512-byte buffer is full</option><option value="10">f_sync every 10 records</option><option value="each">f_sync after every record (slow, safest)</option></select>
+   <label>Process temperature <span class="v" id="tv"></span></label><input type="range" id="t" min="-20" max="200" value="85">
+   <label>Process pressure <span class="v" id="pv"></span></label><input type="range" id="p" min="0" max="10" step="0.1" value="3.2">
+   <label class="check"><input type="checkbox" id="wb"> 4–20 mA loop wire break</label>
+   <label class="check"><input type="checkbox" id="rtd"> PT100 open circuit</label>
+  </div>
+  <div class="panel">
+   <h2>Hardware</h2>
+   <div class="btns"><button class="warn" id="card">Remove SD card</button><button class="sec" id="newday">Advance RTC to next day</button></div>
+   <div class="btns"><button id="run">Pause</button><button class="sec" id="dl">Download current file</button></div>
+   <label>Simulation speed</label><select id="speed"><option value="1" selected>1×</option><option value="10">10×</option><option value="60">60×</option></select>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+    <div><span class="card" id="cardst">💾 SD card mounted · FAT32</span></div>
+    <div class="mono muted" id="clock"></div>
+   </div>
+   <div class="stats">
+    <div class="stat"><div class="k">PT100</div><div class="n sm" id="rtdN">—</div></div>
+    <div class="stat"><div class="k">Pressure loop</div><div class="n sm" id="loopN">—</div></div>
+    <div class="stat"><div class="k">Records written</div><div class="n" id="recN">0</div></div>
+    <div class="stat"><div class="k">Records lost</div><div class="n" id="lostN">0</div></div>
+    <div class="stat"><div class="k">Sector writes</div><div class="n" id="secN">0</div></div>
+    <div class="stat"><div class="k">Open file</div><div class="n sm" id="fileN">—</div></div>
+   </div>
+   <h3>512-byte write buffer <span class="muted" id="bufN"></span></h3>
+   <div class="buf" id="buf"></div>
+  </div>
+  <div class="panel"><h2>Live data</h2><canvas class="chart" id="c1" style="height:220px"></canvas></div>
+  <div class="split">
+   <div class="panel"><h2>Directory · 0:/LOGS</h2><div class="dir" id="dir"></div><h3>Tail of the open file</h3><div class="console" id="tail" style="height:150px"></div></div>
+   <div class="panel"><h2>Firmware log</h2><div class="console" id="log" style="height:330px"></div></div>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+const log=makeLog($('log'),300);
+let simT=0,clock=new Date(),nextS=0,cardIn=true,files={},open=null,buf=[],bufBytes=0,recs=0,lost=0,secs=0,sinceSync=0;
+const chart=new Chart($('c1'),{window:120,series:[{name:'temperature °C',color:'#f59e0b'},{name:'pressure bar ×10',color:'#38bdf8'}]});
+const fname=()=>`LOG_${clock.getFullYear()}${pad(clock.getMonth()+1)}${pad(clock.getDate())}.CSV`;
+const ts=()=>`${clock.getFullYear()}-${pad(clock.getMonth()+1)}-${pad(clock.getDate())} ${pad(clock.getHours())}:${pad(clock.getMinutes())}:${pad(clock.getSeconds())}`;
+function openFile(){
+ if(!cardIn){open=null;return false}
+ const n=fname();if(open===n)return true;
+ if(!files[n]){files[n]={size:0,lines:['timestamp,temp_c,pressure_bar,status'],created:ts()};files[n].size=files[n].lines[0].length+1;log(`f_open("0:/LOGS/${n}", FA_WRITE|FA_OPEN_APPEND) → FR_OK (new file, header written)`,'ok')}
+ else log(`f_open("0:/LOGS/${n}", FA_OPEN_APPEND) → FR_OK (size ${files[n].size} B)`,'ok');
+ open=n;return true;
+}
+function flush(why){
+ if(!buf.length)return;
+ if(!cardIn||!open){lost+=buf.length;log(`f_write failed: FR_NOT_READY (card removed) — ${buf.length} buffered record(s) lost`,'err');buf=[];bufBytes=0;return}
+ const f=files[open];for(const l of buf){f.lines.push(l);f.size+=l.length+1}
+ secs+=Math.ceil(bufBytes/512);log(`f_write(${bufBytes} B) + f_sync() → FR_OK · ${why} · ${Math.ceil(bufBytes/512)} sector(s) · ${open} now ${f.size} B`,'dim');
+ recs+=buf.length;buf=[];bufBytes=0;sinceSync=0;tailDraw();
+}
+function sample(){
+ const wb=$('wb').checked,ro=$('rtd').checked;
+ const T=+$('t').value+(Math.random()-0.5)*0.6,P=+$('p').value+(Math.random()-0.5)*0.05;
+ const R=ro?Infinity:100*(1+3.9083e-3*T-5.775e-7*T*T),I=wb?0.4:4+16*clamp(P,0,10)/10;
+ const tOk=!ro,pOk=I>=3.6&&I<=20.5;
+ $('rtdN').textContent=ro?'OPEN (∞ Ω)':fmt(R,2)+' Ω → '+fmt(T,1)+' °C';$('loopN').textContent=fmt(I,2)+' mA → '+(pOk?fmt(P,2)+' bar':'FAULT (<3.6 mA)');
+ let status='OK';if(!tOk)status='RTD_OPEN';if(!pOk)status=(status==='OK'?'':status+'|')+'LOOP_FAULT';
+ const line=`${ts()},${tOk?fmt(T,1):'NaN'},${pOk?fmt(P,2):'NaN'},${status}`;
+ if(status!=='OK')log(`sensor fault flagged: ${status}`,'warn');
+ chart.push(simT,[tOk?T:null,pOk?P*10:null]);
+ if(!openFile()){lost++;log(`record dropped — no card (${line})`,'err');return}
+ buf.push(line);bufBytes+=line.length+1;sinceSync++;
+ const pol=$('sync').value;
+ if(bufBytes>=512)flush('buffer full');else if(pol==='each')flush('sync each record');else if(pol==='10'&&sinceSync>=10)flush('10 records');
+}
+function step(dt){simT+=dt;clock=new Date(clock.getTime()+dt*1000);if(simT>=nextS){nextS+=(+$('iv').value);sample();if(open&&open!==fname()){flush('midnight rollover');log(`f_close(${open}) — date changed, rotating to ${fname()}`,'warn');open=null;openFile()}}}
+function tailDraw(){const f=open&&files[open];$('tail').textContent=f?f.lines.slice(-8).join('\n'):'(no open file)';$('tail').scrollTop=1e9}
+function draw(){
+ chart.draw();$('clock').textContent='RTC '+ts();
+ $('recN').textContent=recs;$('lostN').textContent=lost;$('secN').textContent=secs;$('fileN').textContent=open||'none';
+ $('bufN').textContent=`${bufBytes} / 512 B · ${buf.length} record(s) not yet on card`;
+ $('buf').innerHTML=Array.from({length:32},(_,i)=>`<i class="${i<bufBytes/16?'f':''}"></i>`).join('');
+ $('dir').innerHTML=Object.keys(files).sort().map(n=>`${n===open?'<b>':''}${n.padEnd(18)}${String(files[n].size).padStart(8)} B  ${files[n].created}${n===open?'  (open)</b>':''}`).join('\n')||'(empty)';
+}
+$('card').addEventListener('click',()=>{cardIn=!cardIn;if(!cardIn){log('card detect: SD card REMOVED — f_mount lost, writes will fail until re-inserted','err');$('cardst').textContent='⚠ no card';$('cardst').className='card out';open=null;$('card').textContent='Insert SD card'}else{log('card detect: SD card inserted → f_mount("0:") FR_OK, FAT32, 7.4 GB free','ok');$('cardst').textContent='💾 SD card mounted · FAT32';$('cardst').className='card';$('card').textContent='Remove SD card';openFile()}});
+$('newday').addEventListener('click',()=>{clock=new Date(clock.getFullYear(),clock.getMonth(),clock.getDate()+1,0,0,0);log('RTC advanced to '+ts(),'warn')});
+$('dl').addEventListener('click',()=>{const n=open||Object.keys(files).pop();if(!n)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([files[n].lines.concat(buf).join('\n')+'\n'],{type:'text/csv'}));a.download=n;a.click()});
+bindRange('t','tv',v=>v+' °C');bindRange('p','pv',v=>fmt(v,1)+' bar');
+const loop=makeLoop(step,draw,10);loop.speed=+$('speed').value;
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});
+$('run').addEventListener('click',()=>{loop.toggle();$('run').textContent=loop.running?'Pause':'Run'});
+log('f_mount("0:") → FR_OK · FAT32 · 7.4 GB free · cluster 32 KB','ok');log('RTC: '+ts(),'dim');openFile();draw();loop.start();
+</script>
+</body>
+</html>

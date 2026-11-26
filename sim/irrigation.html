@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1120">
+<title>ESP32 Smart Irrigation Simulator · Venu Konda</title>
+<link rel="icon" href="../assets/img/favicon.png">
+<link rel="stylesheet" href="sim.css">
+<style>
+.plant{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tank{position:relative;height:120px;background:var(--ink);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tank i{position:absolute;left:0;right:0;bottom:0;background:#0ea5e9;opacity:.7;transition:height .2s}
+.tank span{position:absolute;left:8px;top:6px;font-size:12px;color:var(--muted)}
+.soil{position:relative;height:120px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(#78350f,#451a03);overflow:hidden}
+.soil i{position:absolute;left:0;right:0;bottom:0;background:#1d4ed8;opacity:.45;transition:height .2s}
+.soil span{position:absolute;left:8px;top:6px;font-size:12px;color:#fde68a}
+.pump{display:inline-block;padding:6px 12px;border-radius:8px;background:#1f2937;border:1px solid var(--line);font-weight:700}
+.pump.on{background:#052e16;border-color:#16a34a;color:#86efac}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:.15}}
+@keyframes fast{0%,49%{opacity:1}50%,100%{opacity:.15}}
+.led.idle{background:var(--green);animation:blink 2s infinite}
+.led.water{background:var(--green);box-shadow:0 0 10px var(--green)}
+.led.tank{background:var(--amber);animation:blink .6s infinite}
+.led.fault{background:var(--red);animation:fast .25s infinite}
+.st{font-size:1.4rem;font-weight:800}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap"><a class="back" href="../#projects">← Portfolio</a><h1>ESP32 Smart Irrigation Controller</h1><span class="tag">ESP-IDF · FreeRTOS · NVS · MQTT</span> <a class="back" href="https://github.com/venu-konda/ESP32-Smart-Irrigation" target="_blank" rel="noopener">GitHub ↗</a></div></div>
+<main class="wrap">
+<p class="intro">The control logic of my ESP32 irrigation firmware running against a simulated plot: a capacitive soil-moisture probe (raw ADC counts with dry/wet calibration), a pump on a relay, a tank float switch and a hardware fail-safe timer. The same state machine, safety limits, UART console commands and MQTT JSON as the real device. Simulated time runs at the speed you choose.</p>
+<div class="layout">
+ <div class="stack">
+  <div class="panel">
+   <h2>Settings <span class="muted small">(persisted in NVS)</span></h2>
+   <label>Pump ON below <span class="v" id="onv"></span></label><input type="range" id="on_pct" min="10" max="60" value="35">
+   <label>Pump OFF at <span class="v" id="offv"></span></label><input type="range" id="off_pct" min="30" max="90" value="60">
+   <label>Max run per cycle <span class="v" id="runv"></span></label><input type="range" id="max_run" min="1" max="30" value="8">
+   <label>Soak pause after a timed-out cycle <span class="v" id="soakv"></span></label><input type="range" id="soak" min="1" max="60" value="15">
+   <label>Minimum interval between cycles <span class="v" id="minintv"></span></label><input type="range" id="min_int" min="0" max="60" value="5">
+   <label>Watering window <span class="v" id="winv"></span></label>
+   <div class="split"><input type="number" id="win_s" min="0" max="23" value="6"><input type="number" id="win_e" min="0" max="23" value="21"></div>
+   <label>Fault after N consecutive timed-out cycles <span class="v" id="faultv"></span></label><input type="range" id="fault_n" min="1" max="6" value="3">
+   <h3>Sensor calibration (raw ADC counts)</h3>
+   <div class="split"><div><label>Dry point</label><input type="number" id="cal_dry" value="2800"></div><div><label>Wet point</label><input type="number" id="cal_wet" value="1200"></div></div>
+  </div>
+  <div class="panel">
+   <h2>World</h2>
+   <label>Weather (drying rate) <span class="v" id="sunv"></span></label><input type="range" id="sun" min="0.2" max="3" step="0.1" value="1">
+   <div class="btns"><button class="sec" id="refill">Refill tank</button><button class="warn" id="stall">Stall control task</button><button class="sec" id="reboot">Reboot ESP32</button></div>
+   <label>Simulation speed</label><select id="speed"><option value="1">1 min / s</option><option value="5" selected>5 min / s</option><option value="20">20 min / s</option></select>
+   <div class="btns"><button id="run">Pause</button></div>
+  </div>
+ </div>
+ <div class="stack">
+  <div class="panel">
+   <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
+    <div><span class="led" id="led"></span><span class="st" id="state">IDLE</span> <span class="muted small" id="reason"></span></div>
+    <div class="mono muted" id="clock">Day 1 06:00</div>
+   </div>
+   <div class="plant" style="margin-top:12px">
+    <div class="soil"><i id="soilbar"></i><span>soil moisture <b id="soilpct"></b></span></div>
+    <div class="tank"><i id="tankbar"></i><span>tank <b id="tankl"></b></span></div>
+   </div>
+   <div class="stats">
+    <div class="stat"><div class="k">Moisture (firmware)</div><div class="n" id="mN">—</div></div>
+    <div class="stat"><div class="k">ADC raw (median of 9)</div><div class="n" id="rawN">—</div></div>
+    <div class="stat"><div class="k">Pump</div><div class="n sm"><span class="pump" id="pump">OFF</span></div></div>
+    <div class="stat"><div class="k">Cycle timer</div><div class="n sm" id="cycN">—</div></div>
+    <div class="stat"><div class="k">Fail-safe HW timer</div><div class="n sm" id="fsN">armed</div></div>
+    <div class="stat"><div class="k">Timed-out cycles</div><div class="n" id="toN">0</div></div>
+   </div>
+  </div>
+  <div class="panel"><h2>History</h2><canvas class="chart" id="c1"></canvas></div>
+  <div class="split">
+   <div class="panel"><h2>UART console</h2><div class="terminal" id="term"></div><form class="cmdline" id="cmdf"><input type="text" id="cmd" placeholder="status · set on_pct 30 · pump on 2 · cal dry · fault reset · help"><button>Send</button></form></div>
+   <div class="panel"><h2>MQTT <span class="muted small">irrigation/status (retained)</span></h2><pre class="console mono" id="mqtt" style="height:200px"></pre><form class="cmdline" id="mqf"><input type="text" id="mq" placeholder='{"cmd":"pump","on":1,"min":2}'><button class="sec">Publish cmd</button></form></div>
+  </div>
+ </div>
+</div>
+</main>
+<script src="sim.js"></script>
+<script>
+/* ---- world (true physics) ---- */
+const TRUE_DRY=2800,TRUE_WET=1200;
+let W,F;
+function resetWorld(){W={m:48,tank:20,tmin:6*60,day:1,inflow:[],pumpOn:false}}
+/* ---- firmware state ---- */
+function bootFw(keepNvs){const nvs=keepNvs&&F?F.nvs:{on_pct:35,off_pct:60,max_run:8,soak:15,min_int:5,win_s:6,win_e:21,fault_n:3,cal_dry:2800,cal_wet:1200};
+ F={nvs,state:'IDLE',reason:'',cycleStart:null,soakEnd:null,lastEnd:-1e9,timeouts:0,manualEnd:null,stalled:0,fs:null,uptime:0,pct:0,raw:0};
+ Object.entries(nvs).forEach(([k,v])=>{if($(k)){$(k).value=v;$(k).dispatchEvent(new Event('input'))}});
+ readSensor();term('I (0) boot: ESP32 irrigation v1.2, settings loaded from NVS','dim');term(`I (12) cal: dry=${nvs.cal_dry} wet=${nvs.cal_wet}`,'dim');term('I (20) wifi: connected, mqtt: online (LWT set)','dim');
+}
+const term=(s,c)=>{const d=document.createElement('div');if(c)d.className=c;d.textContent=s;const t=$('term');t.appendChild(d);while(t.childElementCount>250)t.removeChild(t.firstChild);t.scrollTop=t.scrollHeight};
+const clockStr=()=>`Day ${W.day} ${pad(Math.floor(W.tmin/60))}:${pad(Math.floor(W.tmin%60))}`;
+const chart=new Chart($('c1'),{window:480,yMin:0,yMax:100,xLabel:'m',yLabel:'%',series:[{name:'moisture %',color:'#38bdf8'},{name:'ON threshold',color:'#f59e0b',dash:[5,4],width:1},{name:'OFF threshold',color:'#22c55e',dash:[5,4],width:1},{name:'pump',color:'#a78bfa',width:1},{name:'tank %',color:'#64748b',width:1}]});
+let simT=0;
+function setPump(on,why){if(W.pumpOn===on)return;W.pumpOn=on;term(`${on?'I':'I'} (${Math.round(F.uptime*60)}) pump: ${on?'ON':'OFF'}${why?' ('+why+')':''}`,on?'p':'');if(on)F.fs=F.nvs.max_run+1;else F.fs=null}
+function readSensor(){const n=[];for(let i=0;i<9;i++)n.push(TRUE_DRY+(TRUE_WET-TRUE_DRY)*W.m/100+(Math.random()-0.5)*60);n.sort((a,b)=>a-b);F.raw=Math.round(n[4]);
+ const {cal_dry:d,cal_wet:w}=F.nvs;F.pct=clamp(100*(d-F.raw)/(d-w),0,100)}
+function inWindow(){const h=W.tmin/60,{win_s:s,win_e:e}=F.nvs;return s<=e?(h>=s&&h<e):(h>=s||h<e)}
+function fw(dt){ /* control task, runs every simulated minute step */
+ const S=F.nvs,now=F.uptime;
+ readSensor();
+ if(F.manualEnd!==null){if(now>=F.manualEnd||W.tank<1){F.manualEnd=null;setPump(false,'manual run finished')}else{setPump(true,'manual');F.state='MANUAL';F.reason='';return}}
+ const tankOk=W.tank>=1;
+ switch(F.state){
+  case 'IDLE':case 'MANUAL':
+   F.state='IDLE';setPump(false);
+   if(!tankOk){F.state='TANK_EMPTY';term('W tank: float switch open — lockout','err');break}
+   if(!inWindow()){F.reason=`outside watering window ${pad(S.win_s)}:00–${pad(S.win_e)}:00`;break}
+   if(now-F.lastEnd<S.min_int){F.reason=`min interval, ${fmt(S.min_int-(now-F.lastEnd),0)} min left`;break}
+   F.reason=F.pct<S.on_pct?'':`waiting for moisture < ${S.on_pct} %`;
+   if(F.pct<S.on_pct){F.state='WATERING';F.cycleStart=now;setPump(true,`moisture ${fmt(F.pct,0)} % < ${S.on_pct} %`)}
+   break;
+  case 'WATERING':
+   setPump(true);F.reason=`until ${S.off_pct} % or ${S.max_run} min`;
+   if(!tankOk){setPump(false,'tank empty');F.state='TANK_EMPTY';F.lastEnd=now;term('W tank: float switch open during cycle — lockout','err');break}
+   if(F.pct>=S.off_pct){setPump(false,`reached ${S.off_pct} %`);F.timeouts=0;F.lastEnd=now;F.state='IDLE';break}
+   if(now-F.cycleStart>=S.max_run){setPump(false,'max run time');F.timeouts++;F.lastEnd=now;term(`W cycle timed out (${F.timeouts}/${S.fault_n})`,'err');
+    if(F.timeouts>=S.fault_n){F.state='FAULT';term('E FAULT: moisture never reached off_pct — dry probe, empty line or broken pump. Waiting for "fault reset".','err')}else{F.state='SOAK';F.soakEnd=now+S.soak}}
+   break;
+  case 'SOAK':setPump(false);F.reason=`soak pause, ${fmt(F.soakEnd-now,0)} min left`;if(now>=F.soakEnd)F.state='IDLE';break;
+  case 'TANK_EMPTY':setPump(false);F.reason='refill the tank';if(tankOk){F.state='IDLE';term('I tank: float switch closed — resume','p')}break;
+  case 'FAULT':setPump(false);F.reason='needs "fault reset"';break;
+ }
+}
+function step(dt){ /* dt in simulated minutes */
+ /* world */
+ const sun=+$('sun').value,hour=W.tmin/60,day=hour>=10&&hour<=16?1.6:hour>=6&&hour<=20?1:0.4;
+ W.m-=0.12*sun*day*dt;
+ if(W.pumpOn&&W.tank>0){W.tank=Math.max(0,W.tank-0.5*dt);W.inflow.push({t:simT+2,amt:0.9*dt})}
+ while(W.inflow.length&&W.inflow[0].t<=simT){W.m+=W.inflow.shift().amt}
+ W.m=clamp(W.m,0,100);
+ if(W.pumpOn&&W.tank<=0&&F.fs===null)W.pumpOn=false;
+ W.tmin+=dt;if(W.tmin>=1440){W.tmin-=1440;W.day++}simT+=dt;
+ /* firmware (may be stalled) */
+ F.uptime+=dt;
+ if(F.fs!==null){F.fs-=dt;if(F.fs<=0){W.pumpOn=false;F.fs=null;term('E hw-timer: fail-safe expired — pump forced OFF by hardware timer','err')}}
+ if(F.stalled>0){F.stalled-=dt;if(F.stalled<=0){term('I control task resumed','p')}}
+ else fw(dt);
+ if(Math.floor(simT)!==Math.floor(simT-dt)){chart.push(simT,[W.m,F.nvs.on_pct,F.nvs.off_pct,W.pumpOn?100:0,W.tank*5]);if(Math.floor(simT)%5===0)mqttStatus()}
+}
+function mqttStatus(){$('mqtt').textContent=JSON.stringify({state:F.stalled>0?'STALLED':F.state,moisture:+fmt(F.pct,1),raw:F.raw,pump:W.pumpOn?1:0,tank:W.tank>=1?'ok':'empty',timeouts:F.timeouts,uptime_min:Math.round(F.uptime),clock:clockStr(),settings:F.nvs},null,1)}
+function draw(){
+ chart.draw();$('clock').textContent=clockStr();
+ $('soilbar').style.height=W.m+'%';$('soilpct').textContent=fmt(W.m,0)+' % (true)';$('tankbar').style.height=W.tank*5+'%';$('tankl').textContent=fmt(W.tank,1)+' L';
+ $('mN').textContent=fmt(F.pct,1)+' %';$('rawN').textContent=F.raw;$('pump').textContent=W.pumpOn?'ON':'OFF';$('pump').className='pump'+(W.pumpOn?' on':'');
+ const st=F.stalled>0?'STALLED':F.state;$('state').textContent=st;$('reason').textContent=F.stalled>0?'control task not running — hardware timer protects the pump':F.reason;
+ $('led').className='led '+(st==='WATERING'||st==='MANUAL'?'water':st==='TANK_EMPTY'?'tank':st==='FAULT'||st==='STALLED'?'fault':'idle');
+ $('cycN').textContent=F.state==='WATERING'?fmt(F.uptime-F.cycleStart,1)+' / '+F.nvs.max_run+' min':'—';$('fsN').textContent=F.fs!==null?fmt(F.fs,1)+' min left':'armed';$('toN').textContent=F.timeouts;
+}
+/* settings UI → NVS */
+const L={on_pct:['onv',v=>v+' %'],off_pct:['offv',v=>v+' %'],max_run:['runv',v=>v+' min'],soak:['soakv',v=>v+' min'],min_int:['minintv',v=>v+' min'],fault_n:['faultv',v=>v+' cycles']};
+for(const [id,[out,f]] of Object.entries(L))bindRange(id,out,f,v=>{if(F&&F.nvs[id]!==v){F.nvs[id]=v;if(id==='on_pct'&&F.nvs.off_pct<=v){F.nvs.off_pct=Math.min(90,v+5);$('off_pct').value=F.nvs.off_pct;$('offv').textContent=F.nvs.off_pct+' %'}term(`I nvs: ${id}=${v} saved`,'dim')}});
+['win_s','win_e','cal_dry','cal_wet'].forEach(id=>$(id).addEventListener('change',()=>{F.nvs[id]=parseInt($(id).value,10)||0;$('winv').textContent=`${pad(F.nvs.win_s)}:00 – ${pad(F.nvs.win_e)}:00`;term(`I nvs: ${id}=${F.nvs[id]} saved`,'dim')}));
+bindRange('sun','sunv',v=>fmt(v,1)+'×');
+/* console commands */
+function runCmd(line){
+ term('> '+line,'hi');const a=line.trim().split(/\s+/),c=a[0]?.toLowerCase();
+ if(c==='help')term('status | set <key> <value> | pump on <min> | pump off | cal dry | cal wet | fault reset | reboot');
+ else if(c==='status')term(`state=${F.state} moisture=${fmt(F.pct,1)}% raw=${F.raw} pump=${W.pumpOn?'on':'off'} tank=${W.tank>=1?'ok':'empty'} timeouts=${F.timeouts} clock=${clockStr()}`);
+ else if(c==='set'&&a[1] in F.nvs){const v=parseInt(a[2],10);if(Number.isFinite(v)){F.nvs[a[1]]=v;if($(a[1])){$(a[1]).value=v;$(a[1]).dispatchEvent(new Event('input'));$(a[1]).dispatchEvent(new Event('change'))}term(`ok: ${a[1]}=${v} (saved to NVS)`,'p')}else term('error: value','err')}
+ else if(c==='pump'&&a[1]==='on'){const m=parseFloat(a[2])||1;if(F.state==='FAULT')term('error: in FAULT, reset first','err');else{F.manualEnd=F.uptime+m;term(`ok: manual pump for ${m} min`,'p')}}
+ else if(c==='pump'&&a[1]==='off'){F.manualEnd=null;setPump(false,'console');term('ok','p')}
+ else if(c==='cal'&&(a[1]==='dry'||a[1]==='wet')){readSensor();F.nvs['cal_'+a[1]]=F.raw;$('cal_'+a[1]).value=F.raw;term(`ok: cal_${a[1]}=${F.raw} (saved to NVS)`,'p')}
+ else if(c==='fault'&&a[1]==='reset'){if(F.state==='FAULT'){F.state='IDLE';F.timeouts=0;term('ok: fault cleared','p')}else term('not in FAULT')}
+ else if(c==='reboot')reboot();
+ else term('unknown command, try "help"','err');
+}
+$('cmdf').addEventListener('submit',e=>{e.preventDefault();if($('cmd').value.trim())runCmd($('cmd').value);$('cmd').value=''});
+$('mqf').addEventListener('submit',e=>{e.preventDefault();try{const j=JSON.parse($('mq').value);term('mqtt cmd: '+JSON.stringify(j),'hi');
+ if(j.cmd==='pump')runCmd(j.on?`pump on ${j.min||1}`:'pump off');else if(j.cmd==='set'){for(const k of Object.keys(j))if(k!=='cmd')runCmd(`set ${k} ${j[k]}`)}else if(j.cmd==='fault_reset')runCmd('fault reset');else term('mqtt: unknown cmd','err')}catch(err){term('mqtt: invalid JSON','err')}$('mq').value=''});
+function reboot(){term('I esp_restart()','err');W.pumpOn=false;setTimeout(()=>{bootFw(true);draw()},50)}
+$('reboot').addEventListener('click',reboot);
+$('refill').addEventListener('click',()=>{W.tank=20;term('I tank refilled (20 L)','p')});
+$('stall').addEventListener('click',()=>{F.stalled=12;term('W control task stalled for 12 min (simulated hang) — fail-safe timer takes over','err')});
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});
+const loop=makeLoop(()=>step(0.1),draw,10);   /* 10 steps/s × 0.1 simulated minute = 1 sim-minute per real second at 1× */
+loop.speed=+$('speed').value;
+$('speed').addEventListener('change',()=>{loop.speed=+$('speed').value});
+$('run').addEventListener('click',()=>{loop.toggle();$('run').textContent=loop.running?'Pause':'Run'});
+resetWorld();bootFw(false);$('winv').textContent='06:00 – 21:00';mqttStatus();draw();loop.start();
+</script>
+</body>
+</html>
